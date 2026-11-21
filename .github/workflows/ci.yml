@@ -47,3 +47,72 @@ jobs:
       - run: cargo fmt --all -- --check
       - run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - run: cargo test --workspace --locked
+
+  e2e:
+    name: e2e (Playwright)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install Rust toolchain
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+
+      - name: Cache cargo
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            target
+          key: e2e-${{ runner.os }}-${{ hashFiles('Cargo.lock') }}
+          restore-keys: e2e-${{ runner.os }}-
+
+      - run: cargo build -p homarr-server --locked
+
+      - name: Start server
+        env:
+          DB_DRIVER: sqlite
+          DB_URL: ${{ runner.temp }}/homarr/db.sqlite
+          STATIC_DATA_DIR: ${{ runner.temp }}/homarr
+          REDIS_DISABLED: "true"
+          NO_EXTERNAL_CONNECTION: "true"
+          PORT: "7575"
+        run: |
+          mkdir -p "$STATIC_DATA_DIR"
+          nohup target/debug/homarr-server > "$RUNNER_TEMP/server.log" 2>&1 &
+          for _ in $(seq 60); do
+            curl -fsS http://localhost:7575/api/health/live && exit 0
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/server.log"
+          exit 1
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+
+      - name: Run Playwright
+        working-directory: e2e
+        env:
+          BASE_URL: http://localhost:7575
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      - name: Server log
+        if: failure()
+        run: cat "$RUNNER_TEMP/server.log"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: playwright-report
+          path: e2e/playwright-report
+          retention-days: 7

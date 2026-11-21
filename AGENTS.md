@@ -55,6 +55,10 @@ docker/                   # Dockerfile.dev / .release / .workshop, entrypoint
 - `cargo test --workspace --locked` — tests
 - `cargo run -p homarr-server` — run the app locally (port 7575 by default; config via env, see `.env.example`)
 - `docker compose --profile dev up` — dev container plus Redis
+- End-to-end tests (Playwright, `e2e/`): start a fresh server (e.g. `DB_URL=/tmp/e2e/db.sqlite
+  STATIC_DATA_DIR=/tmp/e2e REDIS_DISABLED=true NO_EXTERNAL_CONNECTION=true cargo run -p homarr-server`), then
+  `cd e2e && npm ci && npx playwright install chromium && BASE_URL=http://localhost:7575 npx playwright test`.
+  The setup step onboards the admin via `/init`; CI runs this as the `e2e` job.
 
 ## Code rules
 
