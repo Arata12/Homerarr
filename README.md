@@ -8,14 +8,14 @@
 
 <!-- Badges -->
 <p align="center">
-  <a href="https://github.com/Arata12/homarr/actions/workflows/ci.yml">
-    <img alt="CI Status" src="https://github.com/Arata12/homarr/actions/workflows/ci.yml/badge.svg" />
+  <a href="https://github.com/Arata12/Homerarr/actions/workflows/ci.yml">
+    <img alt="CI Status" src="https://github.com/Arata12/Homerarr/actions/workflows/ci.yml/badge.svg" />
   </a>
-  <a href="https://github.com/Arata12/homarr/releases/latest">
-    <img alt="Latest Release" src="https://img.shields.io/github/v/release/Arata12/homarr?label=%F0%9F%9A%80%20Release" />
+  <a href="https://github.com/Arata12/Homerarr/releases/latest">
+    <img alt="Latest Release" src="https://img.shields.io/github/v/release/Arata12/Homerarr?label=%F0%9F%9A%80%20Release" />
   </a>
   <img alt="Rust Static musl" src="https://img.shields.io/badge/Rust-Static%20musl-orange?logo=rust" />
-  <a href="https://github.com/Arata12/homarr/pkgs/container/homarr">
+  <a href="https://github.com/Arata12/Homerarr/pkgs/container/homerarr">
     <img alt="GHCR Multi-Arch" src="https://img.shields.io/badge/GHCR-amd64%20%7C%20arm64-2496ED?logo=docker" />
   </a>
   <a href="LICENSE">
@@ -90,7 +90,7 @@ docker run -d \
   -p 7575:7575 \
   -v homarr_appdata:/appdata \
   -v /var/run/docker.sock:/var/run/docker.sock:ro \
-  ghcr.io/arata12/homarr:latest
+  ghcr.io/arata12/homerarr:latest
 ```
 
 Then open **`http://localhost:7575`** — first boot redirects to `/init` to create the administrator account, choose your color scheme, and optionally seed a starter dashboard.
@@ -108,7 +108,7 @@ Then open **`http://localhost:7575`** — first boot redirects to `/init` to cre
 ```yaml
 services:
   homarr:
-    image: ghcr.io/arata12/homarr:latest
+    image: ghcr.io/arata12/homerarr:latest
     container_name: homarr
     restart: unless-stopped
     ports:

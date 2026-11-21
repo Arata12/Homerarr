@@ -1,24 +1,25 @@
-# Homarr (Rust edition) — Agent Rules
+# Homerarr — Agent Rules
 
-This repository is a fork of [homarr-labs/homarr](https://github.com/homarr-labs/homarr) rewritten as a pure Rust
-workspace (v3.x). The upstream TypeScript monorepo (Next.js, tRPC, Bun, Turborepo, Mantine) no longer exists here;
+This repository ([Arata12/Homerarr](https://github.com/Arata12/Homerarr)) is a pure Rust rewrite (v3.x) of
+[homarr-labs/homarr](https://github.com/homarr-labs/homarr). It continues the archived `Arata12/homarr`; crate and
+binary names still use `homarr`. The upstream TypeScript monorepo (Next.js, tRPC, Bun, Turborepo, Mantine) no longer exists here;
 ignore any upstream docs, skills or habits that assume it.
 
 ## Git workflow (mandatory)
 
-- Work directly on `dev` (the default branch). Do not create feature or session branches unless the owner asks.
+- Work directly on `main` (the default branch). Do not create feature or session branches unless the owner asks.
 - The owner works from a phone: they cannot merge, tag or delete branches by hand. Finish the whole flow yourself.
-- Commit with conventional commits (`feat:`, `fix:`, `chore:` …) and push to `dev`.
+- Commit with conventional commits (`feat:`, `fix:`, `chore:` …) and push to `main`.
 
 ## Releases
 
 1. Bump `[workspace.package] version` in the root `Cargo.toml` (crates inherit it with `version.workspace = true`)
-   and refresh the lockfile with `cargo update --workspace`. Commit as `chore(release): vX.Y.Z` on `dev`.
+   and refresh the lockfile with `cargo update --workspace`. Commit as `chore(release): vX.Y.Z` on `main`.
 2. Push a `vX.Y.Z` tag. If tag pushes are blocked, run the `Release` workflow (`release.yml`) via
-   `workflow_dispatch` with input `tag=vX.Y.Z` on `dev`: it creates the release and the tag on the `dev` head, so
+   `workflow_dispatch` with input `tag=vX.Y.Z` on `main`: it creates the release and the tag on the `main` head, so
    the bump commit must already be there.
 3. The workflow builds static musl binaries (amd64, arm64), attaches them to the release and publishes
-   `ghcr.io/arata12/homarr:<version>` plus `latest` (stable releases only).
+   `ghcr.io/arata12/homerarr:<version>` plus `latest` (stable releases only).
 
 Semver: `fix:`-only changes → patch; new features → minor; breaking config/data changes → major.
 
@@ -64,8 +65,10 @@ docker/                   # Dockerfile.dev / .release / .workshop, entrypoint
 - New widget: add the `WidgetKind` in `homarr-definitions` and its metadata/options in `homarr-widgets`.
 - Schema change: add a new numbered migration in BOTH `migrations/sqlite` and `migrations/postgres`. Never edit an
   applied migration.
-- HTML in `homarr-web` is built from strings: every interpolated value must go through `html_escape`
-  (`encode_text` / `encode_double_quoted_attribute`). Never insert user or integration data unescaped.
+- HTML in `homarr-web` and `homarr-widgets` is built with Maud `html!` (escapes by default; follow
+  `homarr-web/src/pages/auth.rs`). `PreEscaped` only for trusted static markup (SVG icons, Markup already rendered
+  by our code), with a comment saying why; never for user or integration data. No inline `<script>` or `on*=`
+  handlers: put JS in `assets/static/`, pass data with `data-*` or `layout::json_script` (the UI sends a strict CSP).
 - Outbound HTTP must use `HttpClientFactory` from `homarr-core` (trusted certificates; `guarded()` /
   `guarded_get` block private-network SSRF targets for user-supplied URLs). Do not build ad-hoc `reqwest` clients.
 - Secrets (integration credentials) are stored encrypted via `homarr-common` encryption; never log or return them.

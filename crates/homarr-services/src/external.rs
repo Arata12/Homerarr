@@ -686,7 +686,7 @@ impl ExternalDataService {
         let resp = self
             .http
             .standard()
-            .get("https://api.github.com/repos/homarr-labs/homarr/releases/latest")
+            .get("https://api.github.com/repos/Arata12/Homerarr/releases/latest")
             .header("Accept", "application/vnd.github+json")
             .send()
             .await;

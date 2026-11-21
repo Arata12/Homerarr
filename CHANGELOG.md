@@ -1,7 +1,7 @@
 # Changelog
 
 Release notes for each version, with binaries and Docker images, are on the
-[GitHub releases page](https://github.com/Arata12/homarr/releases). For upstream Homarr
+[GitHub releases page](https://github.com/Arata12/Homerarr/releases). For upstream Homarr
 history (v2.x and earlier), see [homarr-labs/homarr](https://github.com/homarr-labs/homarr/releases).
 
 ## v3.0.2
