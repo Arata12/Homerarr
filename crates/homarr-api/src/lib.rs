@@ -1693,4 +1693,145 @@ mod tests {
         .await;
         assert_eq!(status, StatusCode::OK);
     }
+
+    fn test_session(
+        perms: Vec<homarr_definitions::GroupPermissionKey>,
+    ) -> homarr_auth::AuthSession {
+        homarr_auth::AuthSession::from_user(
+            "test-user".into(),
+            Some("tester".into()),
+            None,
+            None,
+            "auto".into(),
+            perms,
+            vec![],
+            false,
+            None,
+        )
+    }
+
+    async fn create_test_integration(
+        state: &AppState,
+        session: &homarr_auth::AuthSession,
+        url: &str,
+    ) -> Result<String, homarr_common::HomarrError> {
+        let (_, axum::Json(rec)) = routes::integrations::create_integration(
+            homarr_auth::RequireAuth(session.clone()),
+            axum::extract::State(state.clone()),
+            axum::Json(routes::integrations::CreateIntegrationBody {
+                name: "Test".into(),
+                url: url.into(),
+                external_url: None,
+                kind: "sonarr".into(),
+                app_id: None,
+                secrets: vec![routes::integrations::SecretPairBody {
+                    kind: "apiKey".into(),
+                    value: "secret".into(),
+                }],
+            }),
+        )
+        .await?;
+        Ok(rec.id)
+    }
+
+    async fn update_test_integration(
+        state: &AppState,
+        session: &homarr_auth::AuthSession,
+        id: &str,
+        url: &str,
+        secrets: Option<Vec<routes::integrations::SecretPairBody>>,
+    ) -> Result<(), homarr_common::HomarrError> {
+        routes::integrations::update_integration(
+            homarr_auth::RequireAuth(session.clone()),
+            axum::extract::State(state.clone()),
+            axum::extract::Path(id.to_string()),
+            axum::Json(routes::integrations::UpdateIntegrationBody {
+                name: "Test".into(),
+                url: url.into(),
+                external_url: None,
+                app_id: None,
+                secrets,
+            }),
+        )
+        .await
+        .map(|_| ())
+    }
+
+    #[tokio::test]
+    async fn non_admin_integration_urls_are_restricted() {
+        use homarr_common::HomarrError;
+        use homarr_definitions::GroupPermissionKey as P;
+        let (state, _app) = setup_test_state().await;
+        let creator = test_session(vec![P::IntegrationCreate]);
+        for bad in ["http://127.0.0.1:1/", "http://169.254.169.254/"] {
+            let err = create_test_integration(&state, &creator, bad)
+                .await
+                .unwrap_err();
+            assert!(matches!(err, HomarrError::BadRequest(_)), "{bad}");
+        }
+        create_test_integration(&state, &creator, "http://192.168.1.10:8989/")
+            .await
+            .unwrap();
+
+        let admin = test_session(vec![P::Admin, P::IntegrationCreate]);
+        create_test_integration(&state, &admin, "http://127.0.0.1:1/")
+            .await
+            .unwrap();
+    }
+
+    #[tokio::test]
+    async fn non_admin_must_resupply_secrets_when_origin_changes() {
+        use homarr_common::HomarrError;
+        use homarr_definitions::GroupPermissionKey as P;
+        let (state, _app) = setup_test_state().await;
+        let admin = test_session(vec![P::Admin, P::IntegrationCreate, P::IntegrationFullAll]);
+        let id = create_test_integration(&state, &admin, "http://192.168.1.10:8989/")
+            .await
+            .unwrap();
+        let editor = test_session(vec![P::IntegrationFullAll]);
+        let secret = || {
+            Some(vec![routes::integrations::SecretPairBody {
+                kind: "apiKey".into(),
+                value: "new".into(),
+            }])
+        };
+
+        let err = update_test_integration(&state, &editor, &id, "http://192.168.1.11:8989/", None)
+            .await
+            .unwrap_err();
+        assert!(matches!(err, HomarrError::BadRequest(m) if m.contains("Re-enter")));
+        let err = update_test_integration(
+            &state,
+            &editor,
+            &id,
+            "http://192.168.1.11:8989/",
+            Some(vec![]),
+        )
+        .await
+        .unwrap_err();
+        assert!(matches!(err, HomarrError::BadRequest(_)));
+        // Blocked targets are refused even with credentials.
+        let err = update_test_integration(&state, &editor, &id, "http://127.0.0.1:1/", secret())
+            .await
+            .unwrap_err();
+        assert!(matches!(err, HomarrError::BadRequest(_)));
+
+        // Path-only change and re-supplied credentials are fine.
+        update_test_integration(
+            &state,
+            &editor,
+            &id,
+            "http://192.168.1.10:8989/sonarr",
+            None,
+        )
+        .await
+        .unwrap();
+        update_test_integration(&state, &editor, &id, "http://192.168.1.11:8989/", secret())
+            .await
+            .unwrap();
+        // Admins are exempt.
+        update_test_integration(&state, &admin, &id, "http://127.0.0.1:1/", None)
+            .await
+            .unwrap();
+    }
 }
