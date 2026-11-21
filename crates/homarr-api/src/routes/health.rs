@@ -1,4 +1,5 @@
 use axum::{extract::State, http::StatusCode, response::IntoResponse, Json};
+use homarr_auth::OptionalAuth;
 use homarr_common::HomarrResult;
 use homarr_db::repos::{apps, boards, integrations, users};
 use serde_json::{json, Value};
@@ -34,7 +35,15 @@ pub async fn ready(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-pub async fn info(State(state): State<AppState>) -> HomarrResult<Json<Value>> {
+/// Anonymous callers only learn that the instance is up; version, flags and entity counts are
+/// reserved for signed-in users.
+pub async fn info(
+    OptionalAuth(session): OptionalAuth,
+    State(state): State<AppState>,
+) -> HomarrResult<Json<Value>> {
+    if session.is_none() {
+        return Ok(Json(anonymous_info()));
+    }
     let users_count = users::count(&state.db).await?;
     let boards_count = boards::list_all(&state.db).await?.len();
     let apps_count = apps::list_all(&state.db).await?.len();
@@ -55,6 +64,10 @@ pub async fn info(State(state): State<AppState>) -> HomarrResult<Json<Value>> {
     })))
 }
 
+fn anonymous_info() -> Value {
+    json!({ "runtime": "rust" })
+}
+
 pub async fn updates(State(state): State<AppState>) -> HomarrResult<Json<Value>> {
     let summary = state.services.external.check_updates().await?;
     Ok(Json(serde_json::to_value(summary).unwrap_or_default()))
@@ -70,4 +83,24 @@ pub async fn analytics(
         .build_analytics_snapshot(&state.db)
         .await?;
     Ok(Json(serde_json::to_value(snap).unwrap_or_default()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn anonymous_info_hides_instance_details() {
+        let v = anonymous_info();
+        let obj = v.as_object().unwrap();
+        for key in [
+            "version",
+            "counts",
+            "demoMode",
+            "kubernetesEnabled",
+            "noExternalConnection",
+        ] {
+            assert!(!obj.contains_key(key), "{key} must not be public");
+        }
+    }
 }

@@ -93,6 +93,9 @@ docker run -d \
   ghcr.io/arata12/homerarr:latest
 ```
 
+> [!WARNING]
+> Mounting `docker.sock` gives the container root-equivalent access to the host, and `:ro` does not restrict Docker API calls. Prefer a [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) that only allows read endpoints (e.g. `CONTAINERS=1`) plus the actions you need, and point Homarr at it instead of the raw socket.
+
 Then open **`http://localhost:7575`** — first boot redirects to `/init` to create the administrator account, choose your color scheme, and optionally seed a starter dashboard.
 
 > [!NOTE]
@@ -124,6 +127,9 @@ services:
 volumes:
   homarr_appdata:
 ```
+
+> [!WARNING]
+> The same applies here: `docker.sock:ro` is still full Docker API access. Use a docker-socket-proxy limited to read endpoints where possible.
 
 **Full stack from this repository** (includes external Redis, optional PostgreSQL 17, Custom Widget Workshop, CLI, and Rust dev toolchain in [docker-compose.yml](docker-compose.yml)):
 

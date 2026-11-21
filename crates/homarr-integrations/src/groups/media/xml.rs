@@ -2,8 +2,9 @@
 
 use std::collections::HashMap;
 
-use quick_xml::events::{BytesStart, Event};
-use quick_xml::Reader;
+use quick_xml::escape::resolve_predefined_entity;
+use quick_xml::events::{BytesRef, BytesStart, Event};
+use quick_xml::{Reader, XmlVersion};
 
 #[derive(Debug, Default, Clone)]
 pub struct Node {
@@ -26,21 +27,32 @@ impl Node {
     }
 }
 
+/// Resolves a `&name;` / `&#NN;` reference (quick-xml emits these as separate events).
+pub(crate) fn resolve_ref(reference: &BytesRef<'_>) -> Result<String, String> {
+    if let Some(ch) = reference
+        .resolve_char_ref()
+        .map_err(|err| err.to_string())?
+    {
+        return Ok(ch.to_string());
+    }
+    let name: &str = reference;
+    resolve_predefined_entity(name)
+        .map(str::to_string)
+        .ok_or_else(|| format!("unknown entity &{name};"))
+}
+
 fn node_of(start: &BytesStart<'_>) -> Result<Node, String> {
     let mut node = Node {
-        name: String::from_utf8_lossy(start.name().as_ref()).to_string(),
+        name: start.name().as_ref().to_string(),
         ..Node::default()
     };
     for attribute in start.attributes() {
         let attribute = attribute.map_err(|err| err.to_string())?;
         let value = attribute
-            .unescape_value()
+            .normalized_value(XmlVersion::Implicit1_0)
             .map_err(|err| err.to_string())?
             .to_string();
-        node.attrs.insert(
-            String::from_utf8_lossy(attribute.key.as_ref()).to_string(),
-            value,
-        );
+        node.attrs.insert(attribute.key.as_ref().to_string(), value);
     }
     Ok(node)
 }

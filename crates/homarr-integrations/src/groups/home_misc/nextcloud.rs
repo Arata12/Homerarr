@@ -5,6 +5,7 @@ use chrono::{DateTime, Utc};
 use homarr_common::{HomarrError, HomarrResult};
 use quick_xml::events::Event;
 use quick_xml::reader::Reader;
+use quick_xml::XmlVersion;
 use reqwest::Method;
 use serde::Deserialize;
 use url::Url;
@@ -14,6 +15,7 @@ use super::util::{basic_auth, external_url, q, read_json, send, url as integrati
 use crate::capabilities::calendar::{CalendarEvent, CalendarLink};
 use crate::capabilities::notifications::Notification;
 use crate::error::{check_status, parse_error, request_error};
+use crate::groups::media::xml::resolve_ref;
 use crate::runtime::IntegrationRuntime;
 use crate::types::IntegrationContext;
 
@@ -56,9 +58,8 @@ struct DavResponse {
     calendar_data: Option<String>,
 }
 
-fn local_name(name: &[u8]) -> String {
-    let text = String::from_utf8_lossy(name);
-    text.rsplit(':').next().unwrap_or_default().to_lowercase()
+fn local_name(name: &str) -> String {
+    name.rsplit(':').next().unwrap_or_default().to_lowercase()
 }
 
 /// Parses a `207 Multi-Status` body, ignoring namespace prefixes.
@@ -67,9 +68,12 @@ fn parse_multistatus(xml: &str) -> HomarrResult<Vec<DavResponse>> {
     let mut responses = Vec::new();
     let mut current: Option<DavResponse> = None;
     let mut path: Vec<String> = Vec::new();
+    // quick-xml splits text around entity references; collect it until the next tag.
+    let mut text = String::new();
     loop {
         match reader.read_event() {
             Ok(Event::Start(element)) => {
+                store_text(&mut current, &path, &std::mem::take(&mut text));
                 let name = local_name(element.name().as_ref());
                 if name == "response" {
                     current = Some(DavResponse::default());
@@ -81,10 +85,8 @@ fn parse_multistatus(xml: &str) -> HomarrResult<Vec<DavResponse>> {
                             .is_some_and(|parent| parent == "supported-calendar-component-set")
                     {
                         for attribute in element.attributes().flatten() {
-                            if attribute.key.as_ref() == b"name" {
-                                response
-                                    .components
-                                    .push(String::from_utf8_lossy(&attribute.value).to_uppercase());
+                            if attribute.key.as_ref() == "name" {
+                                response.components.push(attribute.value.to_uppercase());
                             }
                         }
                     }
@@ -92,6 +94,7 @@ fn parse_multistatus(xml: &str) -> HomarrResult<Vec<DavResponse>> {
                 path.push(name);
             }
             Ok(Event::Empty(element)) => {
+                store_text(&mut current, &path, &std::mem::take(&mut text));
                 let name = local_name(element.name().as_ref());
                 if let Some(response) = current.as_mut() {
                     if name == "calendar"
@@ -105,24 +108,20 @@ fn parse_multistatus(xml: &str) -> HomarrResult<Vec<DavResponse>> {
                             .is_some_and(|parent| parent == "supported-calendar-component-set")
                     {
                         for attribute in element.attributes().flatten() {
-                            if attribute.key.as_ref() == b"name" {
-                                response
-                                    .components
-                                    .push(String::from_utf8_lossy(&attribute.value).to_uppercase());
+                            if attribute.key.as_ref() == "name" {
+                                response.components.push(attribute.value.to_uppercase());
                             }
                         }
                     }
                 }
             }
-            Ok(Event::Text(text)) => {
-                let value = text.unescape().map(|v| v.into_owned()).unwrap_or_default();
-                store_text(&mut current, &path, &value);
+            Ok(Event::Text(chunk)) => text.push_str(&chunk.xml_content(XmlVersion::Implicit1_0)),
+            Ok(Event::GeneralRef(reference)) => {
+                text.push_str(&resolve_ref(&reference).unwrap_or_default());
             }
-            Ok(Event::CData(data)) => {
-                let value = String::from_utf8_lossy(&data).into_owned();
-                store_text(&mut current, &path, &value);
-            }
+            Ok(Event::CData(data)) => text.push_str(&data),
             Ok(Event::End(element)) => {
+                store_text(&mut current, &path, &std::mem::take(&mut text));
                 let name = local_name(element.name().as_ref());
                 path.pop();
                 if name == "response" {
@@ -144,7 +143,7 @@ fn parse_multistatus(xml: &str) -> HomarrResult<Vec<DavResponse>> {
 }
 
 fn store_text(current: &mut Option<DavResponse>, path: &[String], value: &str) {
-    let Some(response) = current.as_mut() else {
+    let Some(response) = current.as_mut().filter(|_| !value.is_empty()) else {
         return;
     };
     match path.last().map(String::as_str) {
@@ -461,6 +460,22 @@ mod tests {
             kind: IntegrationKind::Nextcloud,
             secrets: HashMap::new(),
         }
+    }
+
+    #[test]
+    fn multistatus_resolves_entities_and_cdata_in_text() {
+        let xml = r#"<d:multistatus xmlns:d="DAV:" xmlns:c="urn:ietf:params:xml:ns:caldav">
+          <d:response><d:href>/cal/a&amp;b/</d:href>
+            <d:propstat><d:prop><c:calendar-data><![CDATA[BEGIN:VCALENDAR
+]]>SUMMARY:A &amp; B&#10;END:VCALENDAR</c:calendar-data></d:prop></d:propstat>
+          </d:response></d:multistatus>"#;
+        let parsed = parse_multistatus(xml).unwrap();
+        assert_eq!(parsed.len(), 1);
+        assert_eq!(parsed[0].href, "/cal/a&b/");
+        assert_eq!(
+            parsed[0].calendar_data.as_deref(),
+            Some("BEGIN:VCALENDAR\nSUMMARY:A & B\nEND:VCALENDAR")
+        );
     }
 
     #[test]

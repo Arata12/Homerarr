@@ -17,7 +17,10 @@ FROM debian:bookworm-slim AS runner
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl \
     && rm -rf /var/lib/apt/lists/* \
-    && mkdir -p /data /app/public
+    && groupadd --gid 1000 homarr \
+    && useradd --uid 1000 --gid 1000 --no-create-home --shell /usr/sbin/nologin homarr \
+    && mkdir -p /data /app/public \
+    && chown homarr:homarr /data
 
 WORKDIR /app
 COPY --from=builder /workspace/target/release/homarr-workshop /usr/local/bin/homarr-workshop
@@ -27,6 +30,8 @@ ENV HOST=0.0.0.0 \
     PORT=8090 \
     WORKSHOP_DB_URL=/data/workshop.sqlite \
     WORKSHOP_PUBLIC_DIR=/app/public
+
+USER homarr
 
 EXPOSE 8090
 HEALTHCHECK --interval=10s --timeout=3s --start-period=5s --retries=5 \

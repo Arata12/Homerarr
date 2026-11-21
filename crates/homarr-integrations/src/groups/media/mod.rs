@@ -41,7 +41,7 @@ mod servarr;
 mod simple;
 mod tdarr;
 mod util;
-mod xml;
+pub(crate) mod xml;
 
 use servarr::Flavor;
 
