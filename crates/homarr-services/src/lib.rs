@@ -181,6 +181,29 @@ mod tests {
     }
 
     #[test]
+    fn rss_keeps_entities_cdata_and_attribute_values() {
+        let rss = r#"<rss version="2.0"><channel><title>Feed</title>
+          <item>
+            <title>Tom &amp; Jerry &#8211; &lt;1&gt;</title>
+            <link>https://example.com/a?x=1&amp;y=2</link>
+            <description><![CDATA[<p>Hello</p>]]></description>
+            <category>News &amp; Views</category>
+          </item></channel></rss>"#;
+        let entries = external::parse_rss_or_atom(rss);
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].title, "Tom & Jerry \u{2013} <1>");
+        assert_eq!(entries[0].link, "https://example.com/a?x=1&y=2");
+        assert_eq!(entries[0].description.as_deref(), Some("<p>Hello</p>"));
+        assert_eq!(entries[0].categories, vec!["News & Views".to_string()]);
+
+        let atom = r#"<feed><entry><title>T</title>
+          <link href="https://e.com/?a=1&amp;b=2"/><category term="A&amp;B"/></entry></feed>"#;
+        let entries = external::parse_rss_or_atom(atom);
+        assert_eq!(entries[0].link, "https://e.com/?a=1&b=2");
+        assert_eq!(entries[0].categories, vec!["A&B".to_string()]);
+    }
+
+    #[test]
     fn decodes_docker_multiplexed_and_plain_logs() {
         let payload = b"hello docker\n";
         let mut framed = vec![1, 0, 0, 0];

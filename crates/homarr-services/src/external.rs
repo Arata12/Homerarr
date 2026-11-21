@@ -8,8 +8,9 @@ use homarr_db::{
     Database,
 };
 use homarr_redis::RedisStore;
+use quick_xml::escape::resolve_predefined_entity;
 use quick_xml::events::Event;
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -890,7 +891,6 @@ async fn read_varint(stream: &mut TcpStream) -> HomarrResult<i32> {
 /// Parses both RSS 2.0 (`<item>`) and Atom 1.0 (`<entry>`) XML feeds.
 pub fn parse_rss_or_atom(xml: &str) -> Vec<FeedEntry> {
     let mut reader = Reader::from_str(xml);
-    reader.config_mut().trim_text(true);
 
     let mut entries = Vec::new();
     let mut in_item = false;
@@ -902,11 +902,38 @@ pub fn parse_rss_or_atom(xml: &str) -> Vec<FeedEntry> {
     let mut description: Option<String> = None;
     let mut categories: Vec<String> = Vec::new();
     let mut buf = Vec::new();
+    // quick-xml splits text around entity references; collect it and handle it at the next tag.
+    let mut text = String::new();
+    macro_rules! flush_text {
+        () => {
+            let pending = std::mem::take(&mut text);
+            let s = pending.trim();
+            if !s.is_empty() {
+                if !in_item && current_tag == "title" && feed_title.is_none() {
+                    feed_title = Some(s.to_string());
+                } else if in_item {
+                    match current_tag.as_str() {
+                        "title" => title.push_str(s),
+                        "link" => link.push_str(s),
+                        "pubDate" | "published" | "updated" => {
+                            published = Some(s.to_string());
+                        }
+                        "description" | "summary" | "content" => {
+                            description = Some(s.to_string());
+                        }
+                        "category" => categories.push(s.to_string()),
+                        _ => {}
+                    }
+                }
+            }
+        };
+    }
 
     loop {
         match reader.read_event_into(&mut buf) {
             Ok(Event::Start(e)) => {
-                let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                flush_text!();
+                let name = e.local_name().as_ref().to_string();
                 if name == "item" || name == "entry" {
                     in_item = true;
                     title.clear();
@@ -916,16 +943,16 @@ pub fn parse_rss_or_atom(xml: &str) -> Vec<FeedEntry> {
                     categories.clear();
                 } else if in_item && name == "link" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"href" {
-                            if let Ok(href) = attr.unescape_value() {
+                        if attr.key.as_ref() == "href" {
+                            if let Ok(href) = attr.normalized_value(XmlVersion::Implicit1_0) {
                                 link = href.into_owned();
                             }
                         }
                     }
                 } else if in_item && name == "category" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"term" {
-                            if let Ok(term) = attr.unescape_value() {
+                        if attr.key.as_ref() == "term" {
+                            if let Ok(term) = attr.normalized_value(XmlVersion::Implicit1_0) {
                                 categories.push(term.into_owned());
                             }
                         }
@@ -934,11 +961,12 @@ pub fn parse_rss_or_atom(xml: &str) -> Vec<FeedEntry> {
                 current_tag = name;
             }
             Ok(Event::Empty(e)) => {
-                let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                flush_text!();
+                let name = e.local_name().as_ref().to_string();
                 if in_item && name == "link" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"href" {
-                            if let Ok(href) = attr.unescape_value() {
+                        if attr.key.as_ref() == "href" {
+                            if let Ok(href) = attr.normalized_value(XmlVersion::Implicit1_0) {
                                 if link.is_empty() {
                                     link = href.into_owned();
                                 }
@@ -947,41 +975,25 @@ pub fn parse_rss_or_atom(xml: &str) -> Vec<FeedEntry> {
                     }
                 } else if in_item && name == "category" {
                     for attr in e.attributes().flatten() {
-                        if attr.key.as_ref() == b"term" {
-                            if let Ok(term) = attr.unescape_value() {
+                        if attr.key.as_ref() == "term" {
+                            if let Ok(term) = attr.normalized_value(XmlVersion::Implicit1_0) {
                                 categories.push(term.into_owned());
                             }
                         }
                     }
                 }
             }
-            Ok(Event::Text(t)) => {
-                if let Ok(txt) = t.unescape() {
-                    let s = txt.trim();
-                    if s.is_empty() {
-                        buf.clear();
-                        continue;
-                    }
-                    if !in_item && current_tag == "title" && feed_title.is_none() {
-                        feed_title = Some(s.to_string());
-                    } else if in_item {
-                        match current_tag.as_str() {
-                            "title" => title.push_str(s),
-                            "link" => link.push_str(s),
-                            "pubDate" | "published" | "updated" => {
-                                published = Some(s.to_string());
-                            }
-                            "description" | "summary" | "content" => {
-                                description = Some(s.to_string());
-                            }
-                            "category" => categories.push(s.to_string()),
-                            _ => {}
-                        }
-                    }
+            Ok(Event::Text(t)) => text.push_str(&t.xml_content(XmlVersion::Implicit1_0)),
+            Ok(Event::GeneralRef(r)) => {
+                if let Ok(Some(ch)) = r.resolve_char_ref() {
+                    text.push(ch);
+                } else if let Some(value) = resolve_predefined_entity(&r) {
+                    text.push_str(value);
                 }
             }
             Ok(Event::CData(c)) => {
-                let s = String::from_utf8_lossy(c.as_ref()).trim().to_string();
+                flush_text!();
+                let s = c.trim().to_string();
                 if in_item && !s.is_empty() {
                     match current_tag.as_str() {
                         "title" => title.push_str(&s),
@@ -991,7 +1003,8 @@ pub fn parse_rss_or_atom(xml: &str) -> Vec<FeedEntry> {
                 }
             }
             Ok(Event::End(e)) => {
-                let name = String::from_utf8_lossy(e.local_name().as_ref()).to_string();
+                flush_text!();
+                let name = e.local_name().as_ref().to_string();
                 if name == "item" || name == "entry" {
                     if !title.is_empty() || !link.is_empty() {
                         entries.push(FeedEntry {

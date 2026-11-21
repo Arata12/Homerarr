@@ -2,10 +2,11 @@
 
 use homarr_common::{HomarrError, HomarrResult};
 use quick_xml::events::Event;
-use quick_xml::Reader;
+use quick_xml::{Reader, XmlVersion};
 use reqwest::Url;
 
 use super::util::{send_text, url};
+use super::xml::resolve_ref;
 use crate::capabilities::indexer_manager::{Indexer, IndexerId};
 use crate::error::{classify_request_error, RequestFailure};
 use crate::runtime::IntegrationRuntime;
@@ -51,7 +52,7 @@ fn root_name(xml: &str) -> Result<String, String> {
     loop {
         match reader.read_event() {
             Ok(Event::Start(start) | Event::Empty(start)) => {
-                return Ok(String::from_utf8_lossy(start.name().as_ref()).to_string());
+                return Ok(start.name().as_ref().to_string());
             }
             Ok(Event::Eof) => return Err("empty XML document".to_string()),
             Err(err) => return Err(err.to_string()),
@@ -77,9 +78,7 @@ pub fn validate_search(xml: &str) -> Result<(), String> {
     let mut reader = Reader::from_str(xml);
     loop {
         match reader.read_event() {
-            Ok(Event::Start(start) | Event::Empty(start))
-                if start.name().as_ref() == b"channel" =>
-            {
+            Ok(Event::Start(start) | Event::Empty(start)) if start.name().as_ref() == "channel" => {
                 return Ok(());
             }
             Ok(Event::Eof) => return Err("the feed has no <channel>".to_string()),
@@ -104,32 +103,46 @@ pub fn parse_indexers(xml: &str) -> Result<Vec<JackettIndexer>, String> {
     let mut current: Option<(String, bool, Option<String>, Option<String>)> = None;
     let mut capture = Capture::None;
     let mut indexers = Vec::new();
+    // quick-xml splits text around entity references; collect it until the next tag.
+    let mut text = String::new();
+    macro_rules! flush_text {
+        () => {
+            let value = std::mem::take(&mut text);
+            if !value.is_empty() {
+                if let Some((_, _, title, link)) = current.as_mut() {
+                    match capture {
+                        Capture::Title if title.is_none() => *title = Some(value),
+                        Capture::Link if link.is_none() => *link = Some(value),
+                        _ => {}
+                    }
+                }
+            }
+        };
+    }
 
     loop {
         match reader.read_event() {
             Ok(Event::Start(start)) => {
+                flush_text!();
                 depth += 1;
                 let name = start.name();
                 let name = name.as_ref();
                 if depth == 1 {
-                    if name != b"indexers" {
-                        return Err(format!(
-                            "expected an <indexers> document, got <{}>",
-                            String::from_utf8_lossy(name)
-                        ));
+                    if name != "indexers" {
+                        return Err(format!("expected an <indexers> document, got <{}>", name));
                     }
                     saw_root = true;
-                } else if depth == 2 && name == b"indexer" {
+                } else if depth == 2 && name == "indexer" {
                     let mut id = None;
                     let mut configured = false;
                     for attribute in start.attributes().flatten() {
                         let value = attribute
-                            .unescape_value()
+                            .normalized_value(XmlVersion::Implicit1_0)
                             .map_err(|err| err.to_string())?
                             .to_string();
                         match attribute.key.as_ref() {
-                            b"id" => id = Some(value),
-                            b"configured" => configured = value == "true",
+                            "id" => id = Some(value),
+                            "configured" => configured = value == "true",
                             _ => {}
                         }
                     }
@@ -140,32 +153,26 @@ pub fn parse_indexers(xml: &str) -> Result<Vec<JackettIndexer>, String> {
                     indexer_depth = Some(depth);
                 } else if Some(depth) == indexer_depth.map(|d| d + 1) {
                     capture = match name {
-                        b"title" => Capture::Title,
-                        b"link" => Capture::Link,
+                        "title" => Capture::Title,
+                        "link" => Capture::Link,
                         _ => Capture::None,
                     };
                 }
             }
             Ok(Event::Empty(start)) => {
+                flush_text!();
                 if depth == 0 {
                     // `<indexers/>`
-                    if start.name().as_ref() != b"indexers" {
+                    if start.name().as_ref() != "indexers" {
                         return Err("expected an <indexers> document".to_string());
                     }
                     saw_root = true;
                 }
             }
-            Ok(Event::Text(text)) => {
-                if let Some((_, _, title, link)) = current.as_mut() {
-                    let value = text.unescape().map_err(|err| err.to_string())?.to_string();
-                    match capture {
-                        Capture::Title if title.is_none() => *title = Some(value),
-                        Capture::Link if link.is_none() => *link = Some(value),
-                        _ => {}
-                    }
-                }
-            }
+            Ok(Event::Text(chunk)) => text.push_str(&chunk.xml_content(XmlVersion::Implicit1_0)),
+            Ok(Event::GeneralRef(reference)) => text.push_str(&resolve_ref(&reference)?),
             Ok(Event::End(_)) => {
+                flush_text!();
                 capture = Capture::None;
                 if Some(depth) == indexer_depth {
                     if let Some((id, configured, title, link)) = current.take() {
