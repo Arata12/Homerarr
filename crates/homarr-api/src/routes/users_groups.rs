@@ -1,15 +1,18 @@
 use axum::{
     extract::{Path, State},
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     Json,
 };
 use chrono::Utc;
-use homarr_auth::{can_view_board, hash_password, verify_password, RequireAdmin, RequireAuth};
+use homarr_auth::{
+    can_view_board, hash_password, session_token_from_headers, verify_password, RequireAdmin,
+    RequireAuth,
+};
 use homarr_common::{HomarrError, HomarrResult};
 use homarr_db::{
     models::GroupRecord,
     repos::{
-        boards, groups, invites,
+        boards, groups, invites, sessions,
         users::{self, CreateUserInput, UpdateUserPreferencesInput},
     },
 };
@@ -101,6 +104,7 @@ pub async fn update_user(
     RequireAuth(session): RequireAuth,
     State(state): State<AppState>,
     Path(id): Path<String>,
+    req_headers: HeaderMap,
     Json(body): Json<UpdateUserBody>,
 ) -> HomarrResult<Json<Value>> {
     session.require_writable(state.demo_read_only_active())?;
@@ -163,6 +167,11 @@ pub async fn update_user(
     if let Some(pw) = new_password {
         let hash = hash_password(&pw).await?;
         users::update_password(&state.db, &id, &hash).await?;
+        // Revoke existing logins; a user changing their own password keeps the current session.
+        let keep = (session.user_id == id)
+            .then(|| session_token_from_headers(&req_headers, &state.config.auth_cookie_prefix))
+            .flatten();
+        sessions::delete_by_user_id_except(&state.db, &id, keep.as_deref()).await?;
     }
     let updated = users::find_by_id(&state.db, &id)
         .await?

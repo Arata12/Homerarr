@@ -22,6 +22,11 @@ pub enum HomarrError {
     Conflict(String),
     #[error("{0}")]
     UnprocessableEntity(String),
+    #[error("{message}")]
+    RateLimited {
+        message: String,
+        retry_after_secs: u64,
+    },
     #[error("Upstream service error: {0}")]
     Upstream(String),
     #[error("Database error: {0}")]
@@ -39,6 +44,7 @@ impl HomarrError {
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Conflict(_) => StatusCode::CONFLICT,
             Self::UnprocessableEntity(_) => StatusCode::UNPROCESSABLE_ENTITY,
+            Self::RateLimited { .. } => StatusCode::TOO_MANY_REQUESTS,
             Self::Upstream(_) => StatusCode::BAD_GATEWAY,
             Self::Database(_) | Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         }
@@ -52,6 +58,7 @@ impl HomarrError {
             Self::NotFound(_) => "NOT_FOUND",
             Self::Conflict(_) => "CONFLICT",
             Self::UnprocessableEntity(_) => "UNPROCESSABLE_ENTITY",
+            Self::RateLimited { .. } => "TOO_MANY_REQUESTS",
             Self::Upstream(_) => "UPSTREAM_ERROR",
             Self::Database(_) => "DATABASE_ERROR",
             Self::Internal(_) => "INTERNAL_SERVER_ERROR",
@@ -62,12 +69,24 @@ impl HomarrError {
 impl IntoResponse for HomarrError {
     fn into_response(self) -> Response {
         let status = self.status_code();
+        let retry_after = match &self {
+            Self::RateLimited {
+                retry_after_secs, ..
+            } => Some(*retry_after_secs),
+            _ => None,
+        };
         let body = Json(json!({
             "error": {
                 "code": self.code(),
                 "message": self.to_string(),
             }
         }));
-        (status, body).into_response()
+        let mut response = (status, body).into_response();
+        if let Some(secs) = retry_after {
+            response
+                .headers_mut()
+                .insert(axum::http::header::RETRY_AFTER, secs.into());
+        }
+        response
     }
 }

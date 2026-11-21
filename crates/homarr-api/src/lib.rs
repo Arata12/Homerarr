@@ -1,4 +1,5 @@
 pub mod csrf;
+pub mod login_throttle;
 pub mod mcp;
 pub mod openapi;
 pub mod routes;
@@ -1353,5 +1354,193 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(states.get("container-1"), Some(&true));
+    }
+
+    async fn session_authenticated(app: &Router, cookie: &str) -> bool {
+        let req = Request::get("/api/auth/session")
+            .header(header::COOKIE, cookie)
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.clone().oneshot(req).await.unwrap();
+        let body: Value =
+            serde_json::from_slice(&to_bytes(resp.into_body(), usize::MAX).await.unwrap()).unwrap();
+        body["authenticated"].as_bool().unwrap()
+    }
+
+    #[tokio::test]
+    async fn password_change_revokes_other_sessions_but_keeps_callers() {
+        let (_state, app) = setup_test_state().await;
+        let admin = login_cookie(&app, "demo", "demo").await;
+        let bob_id = create_regular_user(&app, &admin, "bob", "bobpass12").await;
+        let uri = format!("/api/users/{bob_id}");
+        let current = login_cookie(&app, "bob", "bobpass12").await;
+        let other = login_cookie(&app, "bob", "bobpass12").await;
+        let (status, _) = send_json(
+            &app,
+            "PATCH",
+            &uri,
+            Some(&current),
+            json!({ "password": "newpass123", "previousPassword": "bobpass12" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(session_authenticated(&app, &current).await);
+        assert!(!session_authenticated(&app, &other).await);
+
+        // An admin reset revokes every session of the target user.
+        let (status, _) = send_json(
+            &app,
+            "PATCH",
+            &uri,
+            Some(&admin),
+            json!({ "password": "resetpass12" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        assert!(!session_authenticated(&app, &current).await);
+        assert!(session_authenticated(&app, &admin).await);
+    }
+
+    async fn login_status(
+        app: &Router,
+        name: &str,
+        password: &str,
+    ) -> (StatusCode, Option<String>) {
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post("/api/auth/login")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(
+                        json!({ "name": name, "password": password }).to_string(),
+                    ))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        let retry = resp
+            .headers()
+            .get(header::RETRY_AFTER)
+            .map(|v| v.to_str().unwrap().to_string());
+        (resp.status(), retry)
+    }
+
+    #[tokio::test]
+    async fn login_is_throttled_after_repeated_failures_and_success_resets() {
+        let (_state, app) = setup_test_state().await;
+
+        for _ in 0..10 {
+            let (status, _) = login_status(&app, "ghost", "whatever1").await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+        }
+        let (status, retry) = login_status(&app, "Ghost", "whatever1").await;
+        assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+        assert!(retry.is_some());
+
+        // Another username from the same IP is still allowed; a success clears its counter.
+        for _ in 0..5 {
+            let (status, _) = login_status(&app, "demo", "wrong").await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+        }
+        assert_eq!(login_status(&app, "demo", "demo").await.0, StatusCode::OK);
+        for _ in 0..10 {
+            let (status, _) = login_status(&app, "demo", "wrong").await;
+            assert_eq!(status, StatusCode::UNAUTHORIZED);
+        }
+        assert_eq!(
+            login_status(&app, "demo", "demo").await.0,
+            StatusCode::TOO_MANY_REQUESTS
+        );
+    }
+
+    #[tokio::test]
+    async fn invite_is_single_use() {
+        let (state, app) = setup_test_state().await;
+        let demo = repos::users::find_by_name_ci(&state.db, "demo")
+            .await
+            .unwrap()
+            .unwrap();
+        let invite =
+            repos::invites::create(&state.db, &demo.id, chrono::Utc::now().timestamp() + 3600)
+                .await
+                .unwrap();
+        let register = |name: &str| json!({ "name": name, "password": "password123", "inviteToken": invite.token });
+        let (status, _) = send_json(
+            &app,
+            "POST",
+            "/api/auth/register",
+            None,
+            register("newuser1"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED);
+        let (status, _) = send_json(
+            &app,
+            "POST",
+            "/api/auth/register",
+            None,
+            register("newuser2"),
+        )
+        .await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+        assert!(
+            !repos::invites::consume_by_token(&state.db, &invite.token, 0)
+                .await
+                .unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn users_manage_only_their_own_api_keys() {
+        let (state, app) = setup_test_state().await;
+        let admin = login_cookie(&app, "demo", "demo").await;
+        let alice_id = create_regular_user(&app, &admin, "alice", "alicepass1").await;
+        let alice = login_cookie(&app, "alice", "alicepass1").await;
+        let demo = repos::users::find_by_name_ci(&state.db, "demo")
+            .await
+            .unwrap()
+            .unwrap();
+        let (_, admin_key) = create_api_key(&state.db, &demo.id, false, None)
+            .await
+            .unwrap();
+        let (_, alice_key) = create_api_key(&state.db, &alice_id, false, None)
+            .await
+            .unwrap();
+
+        let (status, body) =
+            send_json(&app, "GET", "/api/api-keys", Some(&alice), Value::Null).await;
+        assert_eq!(status, StatusCode::OK);
+        let items = body["items"].as_array().unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0]["id"], alice_key.id);
+        assert!(items[0].get("apiKey").is_none());
+
+        let (status, _) = send_json(
+            &app,
+            "DELETE",
+            &format!("/api/api-keys/{}", admin_key.id),
+            Some(&alice),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::NOT_FOUND);
+        let (status, _) = send_json(
+            &app,
+            "DELETE",
+            &format!("/api/api-keys/{}", alice_key.id),
+            Some(&alice),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+        let (status, _) = send_json(
+            &app,
+            "DELETE",
+            &format!("/api/api-keys/{}", admin_key.id),
+            Some(&admin),
+            Value::Null,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
     }
 }

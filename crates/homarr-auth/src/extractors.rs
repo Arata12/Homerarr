@@ -21,7 +21,7 @@ pub struct OptionalAuth(pub Option<AuthSession>);
 pub struct RequireAuth(pub AuthSession);
 pub struct RequireAdmin(pub AuthSession);
 
-fn extract_cookie_value(cookie_header: &str, name: &str) -> Option<String> {
+pub(crate) fn extract_cookie_value(cookie_header: &str, name: &str) -> Option<String> {
     for part in cookie_header.split(';') {
         let trimmed = part.trim();
         if let Some((k, v)) = trimmed.split_once('=') {

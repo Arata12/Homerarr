@@ -150,3 +150,33 @@ pub async fn delete_by_user_id(db: &Database, user_id: &str) -> HomarrResult<u64
     };
     Ok(affected)
 }
+
+/// Deletes every session of `user_id` except `keep_token` (the caller's own session, if any).
+pub async fn delete_by_user_id_except(
+    db: &Database,
+    user_id: &str,
+    keep_token: Option<&str>,
+) -> HomarrResult<u64> {
+    let keep = keep_token.unwrap_or_default();
+    let affected = match db {
+        Database::Sqlite(pool) => {
+            sqlx::query(r#"DELETE FROM "session" WHERE "user_id" = ? AND "session_token" <> ?"#)
+                .bind(user_id)
+                .bind(keep)
+                .execute(pool)
+                .await
+                .map_err(map_sqlx_err)?
+                .rows_affected()
+        }
+        Database::Postgres(pool) => {
+            sqlx::query(r#"DELETE FROM "session" WHERE "user_id" = $1 AND "session_token" <> $2"#)
+                .bind(user_id)
+                .bind(keep)
+                .execute(pool)
+                .await
+                .map_err(map_sqlx_err)?
+                .rows_affected()
+        }
+    };
+    Ok(affected)
+}

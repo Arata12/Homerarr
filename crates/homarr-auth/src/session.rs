@@ -10,6 +10,16 @@ pub fn session_cookie_name(cookie_prefix: &str) -> String {
     format!("{cookie_prefix}.session-token")
 }
 
+/// Session token carried by the request's cookies, if any (not validated).
+pub fn session_token_from_headers(headers: &HeaderMap, cookie_prefix: &str) -> Option<String> {
+    let name = session_cookie_name(cookie_prefix);
+    headers
+        .get_all(axum::http::header::COOKIE)
+        .iter()
+        .filter_map(|v| v.to_str().ok())
+        .find_map(|v| crate::extractors::extract_cookie_value(v, &name))
+}
+
 pub async fn create_session(
     db: &Database,
     user_id: &str,
