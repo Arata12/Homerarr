@@ -1,6 +1,7 @@
 use homarr_common::{HomarrError, HomarrResult};
 
-const BCRYPT_COST: u32 = 10;
+// Existing cost-10 hashes still verify: bcrypt reads the cost from the stored hash.
+const BCRYPT_COST: u32 = 12;
 
 pub async fn hash_password(password: &str) -> HomarrResult<String> {
     let pw = password.to_string();
@@ -21,7 +22,7 @@ pub async fn verify_password(password: &str, hash: &str) -> HomarrResult<bool> {
 
 /// Well-formed bcrypt hash (same cost as `BCRYPT_COST`) that matches no password. Verifying against
 /// it keeps login timing the same for unknown users as for known ones.
-const DUMMY_HASH: &str = "$2b$10$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ0123O";
+const DUMMY_HASH: &str = "$2b$12$abcdefghijklmnopqrstuuABCDEFGHIJKLMNOPQRSTUVWXYZ0123O";
 
 pub async fn verify_dummy_password(password: &str) {
     let _ = verify_password(password, DUMMY_HASH).await;

@@ -99,7 +99,7 @@ docker run -d \
 Then open **`http://localhost:7575`** — first boot redirects to `/init` to create the administrator account, choose your color scheme, and optionally seed a starter dashboard.
 
 > [!NOTE]
-> If `SECRET_ENCRYPTION_KEY` or `AUTH_SECRET` are omitted, Homarr generates cryptographically random secrets on first start and persists them atomically (`0600`) under `/appdata/secrets/` (`STATIC_DATA_DIR/secrets`) so sessions and encrypted integration credentials survive restarts without exposing keys in logs. A new secret is generated only when the file does not exist; if it exists but is unreadable or invalid (or cannot be written), startup fails instead of replacing it. Both variables also accept `SECRET_ENCRYPTION_KEY_FILE` / `AUTH_SECRET_FILE` (path to a file such as a Docker secret; the plain variable wins if both are set). Deployments started from an older `docker-compose.yml` that defaulted `SECRET_ENCRYPTION_KEY` to the public `0123456789abcdef…` value must set it to that value to keep reading stored integration secrets, then rotate.
+> If `SECRET_ENCRYPTION_KEY` is omitted, Homarr generates a cryptographically random key on first start and persists it atomically (`0600`) under `/appdata/secrets/` (`STATIC_DATA_DIR/secrets`) so encrypted integration credentials survive restarts without exposing the key in logs. A new key is generated only when the file does not exist; if it exists but is unreadable or invalid (or cannot be written), startup fails instead of replacing it. It also accepts `SECRET_ENCRYPTION_KEY_FILE` (path to a file such as a Docker secret; the plain variable wins if both are set). `AUTH_SECRET` is no longer used and is ignored if set. Deployments started from an older `docker-compose.yml` that defaulted `SECRET_ENCRYPTION_KEY` to the public `0123456789abcdef…` value must set it to that value to keep reading stored integration secrets, then rotate.
 
 > [!IMPORTANT]
 > The images no longer run as root. The distroless release image runs as `65532:65532` (`nonroot`); set compose `user: "<uid>:<gid>"` to change it (PUID/PGID are not supported there). The Debian image built from `Dockerfile` starts as root only to chown `/appdata/{db,secrets,trusted-certificates}`, then drops to `PUID`/`PGID` (default `1000`/`1000`). **Upgrading** a volume created by an older root image: with the release image run `docker run --rm -v homarr_appdata:/appdata busybox chown -R 65532:65532 /appdata` once; the Debian image fixes ownership itself. To reach a mounted `docker.sock`, add `group_add: ["<gid of the socket>"]`.
@@ -120,9 +120,8 @@ services:
       - homarr_appdata:/appdata
       - /var/run/docker.sock:/var/run/docker.sock:ro
     environment:
-      # Optional: pin explicit secrets instead of auto-persisting under /appdata/secrets
+      # Optional: pin an explicit key instead of auto-persisting under /appdata/secrets
       SECRET_ENCRYPTION_KEY: "<64-hex-chars>"
-      AUTH_SECRET: "<random-secret-string>"
 
 volumes:
   homarr_appdata:
@@ -167,7 +166,6 @@ STATIC_DATA_DIR=./appdata DB_URL=./appdata/db/db.sqlite ASSETS_DIR=./assets ./ho
 | `DB_URL` | `/appdata/db/db.sqlite` | Database connection URL (or `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME`) |
 | `ASSETS_DIR` | `assets` (`/app/assets` in Docker) | Path to static CSS/JS, icons, and 36 locale JSON files |
 | `SECRET_ENCRYPTION_KEY` | Auto-persisted (64 hex chars) | AES-256 encryption key for integration secrets (or `SECRET_ENCRYPTION_KEY_FILE`) |
-| `AUTH_SECRET` | Auto-persisted | Reserved; generated and persisted but not used by any code today (sessions are random DB-backed tokens) (or `AUTH_SECRET_FILE`) |
 | `AUTH_COOKIE_SECURE` | Auto (`true` on HTTPS) | Explicit override for session cookie `Secure` flag |
 | `AUTH_TRUSTED_PROXY_HEADER` | Unset | Reverse-proxy header name for pre-authenticated SSO username |
 | `AUTH_TRUSTED_PROXY_IPS` | Unset | Comma-separated proxy IPs/CIDRs allowed to send `AUTH_TRUSTED_PROXY_HEADER`; the header is ignored from any other peer (and entirely when unset) |

@@ -16,7 +16,6 @@ pub struct AppConfig {
     pub db_driver: DatabaseDriver,
     pub db_url: String,
     pub secret_encryption_key: String,
-    pub auth_secret: String,
     pub auth_cookie_prefix: String,
     /// Explicit `AUTH_COOKIE_SECURE` override for the session cookie `Secure` flag.
     pub auth_cookie_secure: Option<bool>,
@@ -97,8 +96,10 @@ fn is_valid_hex_64(value: &str) -> bool {
     value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit())
 }
 
-fn is_non_empty(value: &str) -> bool {
-    !value.is_empty()
+/// All zeros or one repeated character (e.g. `000…`, `aaa…`): trivially guessable keys.
+fn is_low_entropy_key(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.chars().all(|c| Some(c) == lower.chars().next())
 }
 
 /// Loads a persisted secret from `<dir>/secrets/<file_name>`, generating and persisting a new one
@@ -278,6 +279,12 @@ impl AppConfig {
                         "SECRET_ENCRYPTION_KEY must be a 64-character hex string; candidate: \"{candidate}\""
                     )));
                 }
+                if is_low_entropy_key(&key) {
+                    let candidate = generate_secure_random_token(32);
+                    return Err(HomarrError::BadRequest(format!(
+                        "SECRET_ENCRYPTION_KEY must not be a single repeated character (e.g. all zeros); generate one with `openssl rand -hex 32`; candidate: \"{candidate}\""
+                    )));
+                }
                 key
             }
             None => load_or_create_secret(
@@ -286,13 +293,6 @@ impl AppConfig {
                 "SECRET_ENCRYPTION_KEY",
                 is_valid_hex_64,
             )?,
-        };
-
-        let auth_secret = match secret_env("AUTH_SECRET")? {
-            Some(secret) => secret,
-            None => {
-                load_or_create_secret(&static_data_dir, "auth_secret", "AUTH_SECRET", is_non_empty)?
-            }
         };
 
         let host = non_empty_env("HOST").unwrap_or_else(|| "0.0.0.0".to_string());
@@ -378,7 +378,6 @@ impl AppConfig {
             db_driver,
             db_url,
             secret_encryption_key,
-            auth_secret,
             auth_cookie_prefix: non_empty_env("AUTH_COOKIE_PREFIX")
                 .unwrap_or_else(|| "homarr".to_string()),
             auth_cookie_secure: parse_bool_opt("AUTH_COOKIE_SECURE"),
@@ -428,7 +427,6 @@ impl AppConfig {
             db_driver: DatabaseDriver::Sqlite,
             db_url: "sqlite::memory:".to_string(),
             secret_encryption_key: "0".repeat(64),
-            auth_secret: "1".repeat(64),
             auth_cookie_prefix: "homarr".to_string(),
             auth_cookie_secure: None,
             auth_providers: vec!["credentials".to_string()],
@@ -492,6 +490,13 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn low_entropy_encryption_keys_are_detected() {
+        assert!(is_low_entropy_key(&"0".repeat(64)));
+        assert!(is_low_entropy_key(&"aA".repeat(32)));
+        assert!(!is_low_entropy_key(&"0123456789abcdef".repeat(4)));
     }
 
     #[test]

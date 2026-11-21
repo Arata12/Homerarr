@@ -1479,6 +1479,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_only_demo_blocks_backup_export_and_logs() {
+        let (_state, app) = setup_test_state_with(|c| c.demo_read_only = true).await;
+        let admin = login_cookie(&app, "demo", "demo").await;
+        for uri in ["/api/backup/export", "/api/logs"] {
+            let (status, body) = send_json(&app, "GET", uri, Some(&admin), json!({})).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{uri}: {body}");
+        }
+    }
+
+    #[tokio::test]
     async fn custom_widget_reads_search_engine_and_settings_validation() {
         let (_state, app) = setup_test_state().await;
         for uri in ["/api/custom-widgets", "/api/custom-widgets/missing"] {
