@@ -513,7 +513,6 @@ fn cache_ttl(kind: WidgetKind) -> Option<Duration> {
     use WidgetKind as W;
     match kind {
         // Local/cheap kinds; App stays live so app and ping edits show immediately.
-        // BeszelAlerts: upstream beszel stats use cacheTtlMs 0 (live polling).
         W::App
         | W::Clock
         | W::Bookmarks
@@ -523,8 +522,9 @@ fn cache_ttl(kind: WidgetKind) -> Option<Duration> {
         | W::Iframe
         | W::Video
         | W::Timetable
-        | W::Assistant
-        | W::BeszelAlerts => None,
+        | W::Assistant => None,
+        // Short TTL so anonymous viewers of a public board cannot force an upstream call per request.
+        W::BeszelAlerts => Some(Duration::from_secs(5)),
         W::Weather | W::MediaReleases => Some(Duration::from_secs(5 * 60)),
         W::AirQuality => Some(Duration::from_secs(15 * 60)),
         W::Releases => Some(Duration::from_secs(6 * 60 * 60)),

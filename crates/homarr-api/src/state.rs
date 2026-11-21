@@ -10,6 +10,8 @@ use homarr_services::ServiceContainer;
 use homarr_tasks::TaskScheduler;
 use homarr_widgets::WidgetResolver;
 
+use crate::ws::WsLimiter;
+
 #[derive(Clone)]
 pub struct AppState {
     pub config: Arc<AppConfig>,
@@ -23,6 +25,7 @@ pub struct AppState {
     pub services: ServiceContainer,
     pub scheduler: TaskScheduler,
     pub widgets: WidgetResolver,
+    pub ws_limiter: WsLimiter,
 }
 
 impl AppState {
@@ -65,6 +68,7 @@ impl AppState {
             services,
             scheduler,
             widgets,
+            ws_limiter: WsLimiter::default(),
         }
     }
 

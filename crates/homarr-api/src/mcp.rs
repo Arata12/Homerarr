@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Query, State},
+    extract::{ConnectInfo, Extension, Query, State},
     http::{header, HeaderMap, StatusCode},
     response::{Html, IntoResponse, Redirect, Response},
     Json,
@@ -426,10 +426,32 @@ pub struct OAuthRegisterBody {
     pub redirect_uris: Option<Vec<String>>,
 }
 
+/// Dynamic client registrations allowed per peer IP per window (unauthenticated endpoint).
+const REGISTER_LIMIT: u64 = 20;
+const REGISTER_WINDOW_SECS: u64 = 60 * 60;
+
 pub async fn oauth_register(
     State(state): State<AppState>,
+    peer: Option<Extension<ConnectInfo<std::net::SocketAddr>>>,
     Json(body): Json<OAuthRegisterBody>,
 ) -> HomarrResult<(StatusCode, Json<Value>)> {
+    let ip = peer.map_or_else(
+        || "unknown".to_string(),
+        |Extension(ConnectInfo(addr))| addr.ip().to_string(),
+    );
+    let attempts = state
+        .redis
+        .incr_ex(&format!("mcp:oauth:register:{ip}"), REGISTER_WINDOW_SECS)
+        .await?;
+    if attempts > REGISTER_LIMIT {
+        return Ok((
+            StatusCode::TOO_MANY_REQUESTS,
+            Json(json!({
+                "error": "too_many_requests",
+                "error_description": "Too many client registrations; try again later",
+            })),
+        ));
+    }
     let redirect_uris = body.redirect_uris.unwrap_or_default();
     if redirect_uris.is_empty()
         || redirect_uris.len() > 10
