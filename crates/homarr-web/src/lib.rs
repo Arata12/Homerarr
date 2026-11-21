@@ -54,6 +54,10 @@ pub fn web_router(state: AppState) -> Router {
         .route("/", get(board::home_page))
         .route("/boards", get(board::boards_index_page))
         .route("/boards/{name}", get(board::named_board_page))
+        .route(
+            "/boards/{name}/items/{item_id}/card",
+            get(board::board_item_card),
+        )
         .route("/boards/{name}/settings", get(board::board_settings_page))
         .route("/auth/login", get(auth::login_page))
         .route("/auth/invite/{id}", get(auth::invite_page))
@@ -188,5 +192,59 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn board_item_card_endpoint_respects_access() {
+        let mut cfg = AppConfig::for_test();
+        cfg.demo_mode = true;
+        cfg.assets_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../assets");
+        let certs = CertificateManager::new(cfg.local_certificate_path.clone());
+        let http = HttpClientFactory::new(&certs).unwrap();
+        let db = Database::connect(DatabaseDriver::Sqlite, "sqlite::memory:")
+            .await
+            .unwrap();
+        db.migrate().await.unwrap();
+        let crypto = SecretCrypto::zero_for_test();
+        seed::seed_demo(&db, &crypto).await.unwrap();
+        let board = homarr_db::repos::boards::get_full_board_by_name(&db, "Home")
+            .await
+            .unwrap()
+            .unwrap();
+        let clock = board.items.iter().find(|i| i.kind == "clock").unwrap();
+        let state = AppState::build(
+            cfg,
+            db.clone(),
+            RedisStore::in_memory(),
+            crypto,
+            LogStore::new(),
+            certs,
+            http,
+        );
+        let app = web_router(state);
+        let get = |path: String| {
+            let app = app.clone();
+            async move {
+                app.oneshot(Request::get(path).body(Body::empty()).unwrap())
+                    .await
+                    .unwrap()
+            }
+        };
+
+        let ok = get(format!("/boards/Home/items/{}/card", clock.id)).await;
+        assert_eq!(ok.status(), StatusCode::OK);
+        assert_eq!(ok.headers()[header::CACHE_CONTROL], "no-store");
+        let body = String::from_utf8(to_bytes(ok.into_body(), usize::MAX).await.unwrap().to_vec())
+            .unwrap();
+        assert!(body.contains("clock-widget"), "{body}");
+
+        let missing = get("/boards/Home/items/nope/card".to_string()).await;
+        assert_eq!(missing.status(), StatusCode::NOT_FOUND);
+
+        homarr_db::repos::boards::set_visibility(&db, &board.board.id, false)
+            .await
+            .unwrap();
+        let private = get(format!("/boards/Home/items/{}/card", clock.id)).await;
+        assert_eq!(private.status(), StatusCode::NOT_FOUND);
     }
 }

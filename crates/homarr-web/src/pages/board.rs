@@ -2,17 +2,18 @@ use std::collections::HashMap;
 
 use axum::{
     extract::{Path, State},
-    http::{HeaderMap, StatusCode},
-    response::{Html, IntoResponse, Redirect},
+    http::{header, HeaderMap, StatusCode},
+    response::{Html, IntoResponse, Redirect, Response},
 };
 use homarr_api::AppState;
 use homarr_auth::{can_view_board, check_board_permission, AuthSession, OptionalAuth};
+use homarr_common::HomarrResult;
 use homarr_db::{
-    models::{BoardRecord, FullBoard, LayoutRecord, SectionRecord},
+    models::{BoardRecord, FullBoard, ItemRecord, LayoutRecord, SectionRecord},
     repos::{boards, settings, users},
 };
 use homarr_definitions::{BoardPermission, WidgetKind};
-use homarr_widgets::render_widget_markup;
+use homarr_widgets::{refresh_interval, render_widget_markup};
 use maud::{html, Markup, PreEscaped};
 use serde_json::{json, Value};
 
@@ -503,6 +504,79 @@ impl<'a> ContainerRenderer<'a> {
     }
 }
 
+/// Host the browser used (or the configured base URL), for widgets that embed this origin.
+fn request_origin(state: &AppState, headers: &HeaderMap) -> Option<String> {
+    headers
+        .get("x-forwarded-host")
+        .or_else(|| headers.get("host"))
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.split(',').next())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .or_else(|| state.config.base_url.clone())
+}
+
+/// Inner card of one board item. Shared by the board page and the live-refresh card endpoint
+/// so both always produce identical markup.
+fn render_item_card(
+    item: &ItemRecord,
+    data: HomarrResult<Value>,
+    request_origin: Option<&str>,
+) -> Markup {
+    let kind = WidgetKind::from_str_opt(&item.kind).unwrap_or(WidgetKind::Notebook);
+    let data = data.unwrap_or_else(|e| json!({ "error": e.to_string() }));
+    let mut options = item.options.clone();
+    if let (Some(title), Some(obj)) = (
+        advanced_str(&item.advanced_options, "title"),
+        options.as_object_mut(),
+    ) {
+        obj.insert("title".into(), Value::String(title.to_string()));
+    }
+    render_widget_markup(kind, &item.id, &options, &data, request_origin)
+}
+
+/// `GET /boards/{name}/items/{item_id}/card`: the inner card HTML of one item, for live refresh.
+/// Same view check as the board page; every failure is a plain 404 so board existence is not leaked.
+pub async fn board_item_card(
+    OptionalAuth(session): OptionalAuth,
+    State(web): State<WebState>,
+    Path((name, item_id)): Path<(String, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let state = &web.app;
+    let not_found = || (StatusCode::NOT_FOUND, "Not found").into_response();
+    let Ok(Some(full)) = boards::get_full_board_by_name(&state.db, &name).await else {
+        return not_found();
+    };
+    if !can_view_board(&state.db, session.as_ref(), &full.board)
+        .await
+        .unwrap_or(false)
+    {
+        return not_found();
+    }
+    // Only items the board page actually places are served.
+    let placements = compute_placements(&full, &sorted_layouts(&full));
+    let Some(item) = full
+        .items
+        .iter()
+        .find(|i| i.id == item_id && placements.contains_key(&i.id))
+    else {
+        return not_found();
+    };
+    let kind = WidgetKind::from_str_opt(&item.kind).unwrap_or(WidgetKind::Notebook);
+    let data = state
+        .widgets
+        .resolve_widget_data(kind, &item.options, &item.integration_ids)
+        .await;
+    let card = render_item_card(item, data, request_origin(state, &headers).as_deref());
+    (
+        [(header::CACHE_CONTROL, "no-store")],
+        Html(card.into_string()),
+    )
+        .into_response()
+}
+
 async fn render_full_board(
     web: &WebState,
     session: Option<&AuthSession>,
@@ -521,15 +595,7 @@ async fn render_full_board(
             }
             None => false,
         };
-    let request_origin = headers
-        .get("x-forwarded-host")
-        .or_else(|| headers.get("host"))
-        .and_then(|v| v.to_str().ok())
-        .and_then(|v| v.split(',').next())
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .map(str::to_string)
-        .or_else(|| state.config.base_url.clone());
+    let request_origin = request_origin(state, headers);
 
     let layouts = sorted_layouts(&full);
     let placements = compute_placements(&full, &layouts);
@@ -594,17 +660,15 @@ async fn render_full_board(
     let mut item_html: HashMap<&str, Markup> = HashMap::new();
     for ((item, pl), result) in placed_items.into_iter().zip(resolved) {
         let kind = WidgetKind::from_str_opt(&item.kind).unwrap_or(WidgetKind::Notebook);
-        let data = result.unwrap_or_else(|e| json!({ "error": e.to_string() }));
-
-        let mut options = item.options.clone();
-        if let (Some(title), Some(obj)) = (
-            advanced_str(&item.advanced_options, "title"),
-            options.as_object_mut(),
-        ) {
-            obj.insert("title".into(), Value::String(title.to_string()));
-        }
-        let rendered_card =
-            render_widget_markup(kind, &item.id, &options, &data, request_origin.as_deref());
+        let refresh_secs = refresh_interval(kind).map(|d| d.as_secs());
+        let refresh_url = refresh_secs.map(|_| {
+            format!(
+                "/boards/{}/items/{}/card",
+                urlencoding(&full.board.name),
+                urlencoding(&item.id)
+            )
+        });
+        let rendered_card = render_item_card(item, result, request_origin.as_deref());
 
         let mut extra_classes = String::new();
         for c in safe_css_classes(&item.advanced_options) {
@@ -622,7 +686,7 @@ async fn render_full_board(
         item_html.insert(
             &item.id,
             html! {
-                div class={ "grid-item" (extra_classes) } style=(extra_style) data-item-id=(item.id) data-kind=(kind.as_str()) {
+                div class={ "grid-item" (extra_classes) } style=(extra_style) data-item-id=(item.id) data-kind=(kind.as_str()) data-refresh-secs=[refresh_secs] data-refresh-url=[refresh_url] {
                     @if can_edit {
                         div.item-edit-overlay data-editor-drag aria-hidden="true" {}
                         div.item-edit-controls {

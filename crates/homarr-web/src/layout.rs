@@ -623,6 +623,7 @@ pub fn render_page(ctx: PageContext<'_>) -> String {
                 (spotlight_modal())
                 div #toast-stack .toast-stack {}
                 (json_script("homarr-spotlight-data", &Value::Array(ctx.spotlight_items.to_vec())))
+                script src="/static/vendor/idiomorph.min.js" defer {}
                 script src="/static/homarr.js" defer {}
                 @if ctx.can_edit_board {
                     script src="/static/board-editor.js" defer {}
