@@ -96,6 +96,12 @@ fn is_valid_hex_64(value: &str) -> bool {
     value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit())
 }
 
+/// All zeros or one repeated character (e.g. `000…`, `aaa…`): trivially guessable keys.
+fn is_low_entropy_key(value: &str) -> bool {
+    let lower = value.to_ascii_lowercase();
+    lower.chars().all(|c| Some(c) == lower.chars().next())
+}
+
 /// Loads a persisted secret from `<dir>/secrets/<file_name>`, generating and persisting a new one
 /// atomically (mode 0600 on unix) only when the file does not exist. An unreadable or invalid
 /// existing file, or a failed write, is an error: silently replacing the secret would make data
@@ -271,6 +277,12 @@ impl AppConfig {
                     let candidate = generate_secure_random_token(32);
                     return Err(HomarrError::BadRequest(format!(
                         "SECRET_ENCRYPTION_KEY must be a 64-character hex string; candidate: \"{candidate}\""
+                    )));
+                }
+                if is_low_entropy_key(&key) {
+                    let candidate = generate_secure_random_token(32);
+                    return Err(HomarrError::BadRequest(format!(
+                        "SECRET_ENCRYPTION_KEY must not be a single repeated character (e.g. all zeros); generate one with `openssl rand -hex 32`; candidate: \"{candidate}\""
                     )));
                 }
                 key
@@ -478,6 +490,13 @@ mod tests {
         ));
         let _ = std::fs::remove_dir_all(&dir);
         dir
+    }
+
+    #[test]
+    fn low_entropy_encryption_keys_are_detected() {
+        assert!(is_low_entropy_key(&"0".repeat(64)));
+        assert!(is_low_entropy_key(&"aA".repeat(32)));
+        assert!(!is_low_entropy_key(&"0123456789abcdef".repeat(4)));
     }
 
     #[test]
