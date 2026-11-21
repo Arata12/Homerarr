@@ -1225,6 +1225,156 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn custom_widget_execution_requires_a_viewable_board_using_it() {
+        let (state, app) = setup_test_state().await;
+        let admin = login_cookie(&app, "demo", "demo").await;
+        create_regular_user(&app, &admin, "cwrunner", "runnerpass1").await;
+        let user = login_cookie(&app, "cwrunner", "runnerpass1").await;
+
+        let def = |name: &str, method: &str| repos::custom_widgets::CustomWidgetV2Input {
+            id: None,
+            name: name.into(),
+            description: None,
+            icon_url: None,
+            // Unresolvable `.invalid` host: an allowed call fails upstream and never leaves the box.
+            sources: json!([{ "id": "s", "kind": "http", "url": "http://widget.invalid" }]),
+            requests: json!([{ "id": "r", "sourceId": "s", "path": "/", "method": method }]),
+            options: json!({}),
+            template: "<p>x</p>".into(),
+            workshop: None,
+            enabled: true,
+            creator_id: None,
+        };
+        let get_def = repos::custom_widgets::create_v2(&state.db, def("get", "GET"))
+            .await
+            .unwrap();
+        let post_def = repos::custom_widgets::create_v2(&state.db, def("post", "POST"))
+            .await
+            .unwrap();
+        let unused_def = repos::custom_widgets::create_v2(&state.db, def("unused", "GET"))
+            .await
+            .unwrap();
+
+        let make_board = |name: &str, is_public: bool| {
+            let db = state.db.clone();
+            let name = name.to_string();
+            async move {
+                repos::boards::create_board_with_defaults(
+                    &db,
+                    repos::boards::CreateBoardInput {
+                        id: None,
+                        name,
+                        is_public,
+                        creator_id: None,
+                        column_count: 10,
+                    },
+                )
+                .await
+                .unwrap()
+            }
+        };
+        let add_item = |board: &homarr_db::models::FullBoard, item_id: &str, widget_id: &str| {
+            let item: repos::boards::SaveBoardItemInput = serde_json::from_value(json!({
+                "id": item_id,
+                "kind": "customApi",
+                "options": { "customWidgetId": widget_id },
+                "layouts": [{
+                    "itemId": item_id,
+                    "sectionId": board.sections[0].id,
+                    "layoutId": board.layouts[0].id,
+                    "xOffset": 0, "yOffset": 0, "width": 1, "height": 1
+                }]
+            }))
+            .unwrap();
+            let db = state.db.clone();
+            let board_id = board.board.id.clone();
+            async move {
+                repos::boards::create_board_item(&db, &board_id, &item)
+                    .await
+                    .unwrap()
+            }
+        };
+        let private_board = make_board("cw-private", false).await;
+        add_item(&private_board, "cw-item-private", &get_def.id).await;
+        let public_board = make_board("cw-public", true).await;
+        add_item(&public_board, "cw-item-public", &post_def.id).await;
+
+        let run = |cookie: String, id: String| {
+            let app = app.clone();
+            async move {
+                send_json(
+                    &app,
+                    "POST",
+                    &format!("/api/custom-widgets/{id}/execute"),
+                    Some(&cookie),
+                    json!({ "requestId": "r" }),
+                )
+                .await
+            }
+        };
+        let is_denied = |status: StatusCode, body: &Value| {
+            status == StatusCode::NOT_FOUND && body.to_string().contains("Custom widget not found")
+        };
+
+        // Used only on a private board the user cannot see, or on no board at all: denied.
+        for id in [&get_def.id, &unused_def.id] {
+            let (status, body) = run(user.clone(), id.clone()).await;
+            assert!(is_denied(status, &body), "{id}: {status} {body}");
+        }
+        // Used on a public board: the permission decision passes (the request itself then fails).
+        let (status, body) = run(user.clone(), post_def.id.clone()).await;
+        assert!(!is_denied(status, &body), "{status} {body}");
+        // Admins may always execute.
+        let (status, body) = run(admin.clone(), unused_def.id.clone()).await;
+        assert!(!is_denied(status, &body), "{status} {body}");
+    }
+
+    #[tokio::test]
+    async fn custom_widget_write_methods_require_writable_session() {
+        let (state, app) = setup_test_state_with(|c| c.demo_read_only = true).await;
+        let admin = login_cookie(&app, "demo", "demo").await;
+        let mk = |name: &str, method: &str| repos::custom_widgets::CustomWidgetV2Input {
+            id: None,
+            name: name.into(),
+            description: None,
+            icon_url: None,
+            sources: json!([{ "id": "s", "kind": "http", "url": "http://widget.invalid" }]),
+            requests: json!([{ "id": "r", "sourceId": "s", "path": "/", "method": method }]),
+            options: json!({}),
+            template: "<p>x</p>".into(),
+            workshop: None,
+            enabled: true,
+            creator_id: None,
+        };
+        let post = repos::custom_widgets::create_v2(&state.db, mk("p", "POST"))
+            .await
+            .unwrap();
+        let get = repos::custom_widgets::create_v2(&state.db, mk("g", "GET"))
+            .await
+            .unwrap();
+        let exec = |id: &str| {
+            let app = app.clone();
+            let admin = admin.clone();
+            let uri = format!("/api/custom-widgets/{id}/execute");
+            async move {
+                send_json(
+                    &app,
+                    "POST",
+                    &uri,
+                    Some(&admin),
+                    json!({ "requestId": "r" }),
+                )
+                .await
+            }
+        };
+        let (status, body) = exec(&post.id).await;
+        assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+        assert!(body.to_string().contains("read-only"), "{body}");
+        let (_, body) = exec(&get.id).await;
+        assert!(!body.to_string().contains("read-only"), "{body}");
+    }
+
+    #[tokio::test]
     async fn custom_widget_reads_search_engine_and_settings_validation() {
         let (_state, app) = setup_test_state().await;
         for uri in ["/api/custom-widgets", "/api/custom-widgets/missing"] {

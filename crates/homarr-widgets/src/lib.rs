@@ -1,6 +1,7 @@
 pub mod registry;
 pub mod render;
 pub mod resolver;
+pub mod sanitize;
 
 pub use registry::{
     all_widget_metadata, get_widget_metadata, sanitize_widget_options, widget_option_fields,
@@ -10,6 +11,7 @@ pub use render::{
     render_widget_html, render_widget_html_with_origin, render_widget_markup, safe_url,
 };
 pub use resolver::WidgetResolver;
+pub use sanitize::sanitize_custom_widget_html;
 
 #[cfg(test)]
 mod tests {

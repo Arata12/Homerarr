@@ -4,7 +4,7 @@ use std::time::{Duration, Instant};
 
 use homarr_auth::{check_integration_permission, AuthSession};
 use homarr_common::{HomarrError, HomarrResult, SecretCrypto};
-use homarr_core::{AppConfig, HttpClientFactory};
+use homarr_core::{read_bounded_bytes, AppConfig, HttpClientFactory};
 use homarr_db::{repos::custom_widgets as cw_repo, Database};
 use homarr_definitions::IntegrationPermission;
 use homarr_integrations::{IntegrationContext, IntegrationRegistry};
@@ -16,6 +16,7 @@ use tokio::sync::Mutex;
 
 const CUSTOM_WIDGET_SCHEMA_V2: &str = "homarr-custom-widget-v2";
 const MAX_TEMPLATE_LEN: usize = 50_000;
+const MAX_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 const RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
 const RATE_LIMIT_MAX_PER_WIDGET: usize = 120;
 
@@ -205,7 +206,7 @@ impl CustomWidgetService {
         if method.eq_ignore_ascii_case("GET") {
             let (bytes, _, status) = self
                 .http
-                .guarded_get(&full_url, Some(&headers), None, 4 * 1024 * 1024)
+                .guarded_get(&full_url, Some(&headers), None, MAX_RESPONSE_BYTES)
                 .await?;
             let text = String::from_utf8_lossy(&bytes);
             let parsed = serde_json::from_str::<Value>(&text)
@@ -228,7 +229,8 @@ impl CustomWidgetService {
             .await
             .map_err(|e| HomarrError::Upstream(e.to_string()))?;
         let status = resp.status().as_u16();
-        let text = resp.text().await.unwrap_or_default();
+        let bytes = read_bounded_bytes(resp, MAX_RESPONSE_BYTES).await?;
+        let text = String::from_utf8_lossy(&bytes).into_owned();
         let parsed = serde_json::from_str::<Value>(&text).unwrap_or(Value::String(text));
         Ok(json!({ "status": status, "data": redactor.redact_value(parsed) }))
     }

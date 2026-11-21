@@ -3,7 +3,7 @@ use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
 use homarr_common::{HomarrError, HomarrResult};
-use homarr_core::HttpClientFactory;
+use homarr_core::{read_bounded_bytes, HttpClientFactory};
 use homarr_definitions::IntegrationKind;
 use reqwest::Method;
 use serde_json::Value;
@@ -50,6 +50,9 @@ use crate::types::{
     MediaServerSession, MediaTranscodingSummary, NotificationItem, SmartHomeEntity, StatsResponse,
     TestConnectionResponse, UpsSummary,
 };
+
+/// Upper bound for proxied integration response bodies.
+const MAX_PROXY_RESPONSE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Clone)]
 pub struct IntegrationRegistry {
@@ -184,7 +187,8 @@ impl IntegrationRegistry {
                 resp_headers.insert(k.as_str().to_string(), redactor.redact_str(val_str));
             }
         }
-        let text = resp.text().await.unwrap_or_default();
+        let bytes = read_bounded_bytes(resp, MAX_PROXY_RESPONSE_BYTES).await?;
+        let text = String::from_utf8_lossy(&bytes).into_owned();
         let body_val = serde_json::from_str::<Value>(&text).unwrap_or(Value::String(text));
         let body_val = redactor.redact_value(body_val);
 

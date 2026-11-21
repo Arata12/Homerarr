@@ -267,7 +267,11 @@ impl WidgetResolver {
                         } else {
                             json!({})
                         };
-                        let html = render_template(&def.template, &exec, &opt_map);
+                        let html = crate::sanitize::sanitize_custom_widget_html(&render_template(
+                            &def.template,
+                            &exec,
+                            &opt_map,
+                        ));
                         return Ok(json!({
                             "name": def.name,
                             "renderedHtml": html,

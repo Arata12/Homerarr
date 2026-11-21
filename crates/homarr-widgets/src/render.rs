@@ -1540,8 +1540,10 @@ fn render_stats(data: &Value) -> Markup {
 
 fn render_custom_api(data: &Value) -> Markup {
     if let Some(rendered) = data.get("renderedHtml").and_then(|v| v.as_str()) {
-        // safe: template placeholders were already HTML-escaped by `render_template`.
-        return html! { div.custom-widget-content { (PreEscaped(rendered)) } };
+        // safe: the final HTML is sanitized with an ammonia allowlist (no scripts, handlers or
+        // dangerous elements/URLs); this is the security boundary for Custom Widget templates.
+        let sanitized = crate::sanitize::sanitize_custom_widget_html(rendered);
+        return html! { div.custom-widget-content { (PreEscaped(sanitized)) } };
     }
     empty_box("Configure a Custom API URL or Custom Widget v2 definition")
 }

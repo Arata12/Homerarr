@@ -1957,6 +1957,52 @@ pub async fn get_item_by_id(db: &Database, item_id: &str) -> HomarrResult<Option
     }))
 }
 
+/// Ids of the boards that contain at least one `customApi` item using the given custom widget definition.
+pub async fn board_ids_using_custom_widget(
+    db: &Database,
+    definition_id: &str,
+) -> HomarrResult<Vec<String>> {
+    let rows: Vec<(String, String)> = match db {
+        Database::Sqlite(pool) => {
+            sqlx::query(r#"SELECT "board_id", "options" FROM "item" WHERE "kind" = 'customApi'"#)
+                .fetch_all(pool)
+                .await
+                .map_err(map_sqlx_err)?
+                .iter()
+                .map(|r| Ok((r.try_get("board_id")?, r.try_get("options")?)))
+                .collect::<Result<_, sqlx::Error>>()
+                .map_err(map_sqlx_err)?
+        }
+        Database::Postgres(pool) => {
+            sqlx::query(r#"SELECT "board_id", "options" FROM "item" WHERE "kind" = 'customApi'"#)
+                .fetch_all(pool)
+                .await
+                .map_err(map_sqlx_err)?
+                .iter()
+                .map(|r| Ok((r.try_get("board_id")?, r.try_get("options")?)))
+                .collect::<Result<_, sqlx::Error>>()
+                .map_err(map_sqlx_err)?
+        }
+    };
+    let mut ids: Vec<String> = rows
+        .into_iter()
+        .filter(|(_, opts)| {
+            deserialize_superjson::<Value>(opts)
+                .ok()
+                .and_then(|o| {
+                    o.get("customWidgetId")
+                        .and_then(Value::as_str)
+                        .map(|id| id == definition_id)
+                })
+                .unwrap_or(false)
+        })
+        .map(|(board_id, _)| board_id)
+        .collect();
+    ids.sort();
+    ids.dedup();
+    Ok(ids)
+}
+
 pub async fn get_permissions(
     db: &Database,
     board_id: &str,
