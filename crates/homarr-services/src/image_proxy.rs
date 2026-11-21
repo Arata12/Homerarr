@@ -1,20 +1,16 @@
 use std::collections::{BTreeMap, HashMap};
 
-use aes::Aes256;
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-use cbc::cipher::{block_padding::Pkcs7, BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use hkdf::Hkdf;
 use hmac::{Hmac, Mac};
+use homarr_common::encryption::{decrypt_authenticated, encrypt_authenticated};
 use homarr_common::{is_http_url, validate_outbound_url, HomarrError, HomarrResult, SecretCrypto};
 use homarr_core::HttpClientFactory;
 use homarr_redis::RedisStore;
-use rand::RngCore;
 use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use subtle::ConstantTimeEq;
 
-type Aes256CbcEnc = cbc::Encryptor<Aes256>;
-type Aes256CbcDec = cbc::Decryptor<Aes256>;
 type HmacSha256 = Hmac<Sha256>;
 
 const HKDF_INFO: &[u8] = b"homarr-image-proxy-v1";
@@ -194,29 +190,12 @@ impl ImageProxyService {
     }
 
     fn encrypt_payload(&self, plaintext: &str) -> HomarrResult<String> {
-        let mut iv = [0u8; 16];
-        rand::rngs::OsRng.fill_bytes(&mut iv);
-        let cipher = Aes256CbcEnc::new_from_slices(&self.key, &iv)
-            .map_err(|err| HomarrError::Internal(format!("Image cipher init failed: {err}")))?;
-        let ciphertext = cipher.encrypt_padded_vec_mut::<Pkcs7>(plaintext.as_bytes());
-        Ok(format!("{}.{}", hex::encode(ciphertext), hex::encode(iv)))
+        encrypt_authenticated(&self.key, plaintext)
     }
 
     fn decrypt_payload(&self, encrypted: &str) -> HomarrResult<String> {
-        let (ct_hex, iv_hex) = encrypted.split_once('.').ok_or_else(|| {
-            HomarrError::BadRequest("Malformed encrypted image token".to_string())
-        })?;
-        let iv = hex::decode(iv_hex)
-            .map_err(|err| HomarrError::BadRequest(format!("Invalid IV hex: {err}")))?;
-        let ct = hex::decode(ct_hex)
-            .map_err(|err| HomarrError::BadRequest(format!("Invalid ciphertext hex: {err}")))?;
-        let cipher = Aes256CbcDec::new_from_slices(&self.key, &iv)
-            .map_err(|err| HomarrError::BadRequest(format!("Cipher init failed: {err}")))?;
-        let plain = cipher
-            .decrypt_padded_vec_mut::<Pkcs7>(&ct)
-            .map_err(|_| HomarrError::Forbidden("Image token decryption failed".to_string()))?;
-        String::from_utf8(plain)
-            .map_err(|err| HomarrError::Internal(format!("Invalid decrypted UTF-8: {err}")))
+        decrypt_authenticated(&self.key, encrypted)
+            .map_err(|_| HomarrError::Forbidden("Image token decryption failed".to_string()))
     }
 }
 

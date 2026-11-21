@@ -5,11 +5,9 @@ edition.workspace = true
 license.workspace = true
 
 [dependencies]
-aes.workspace = true
 async-trait = "0.1"
 base64.workspace = true
 bollard.workspace = true
-cbc.workspace = true
 chrono.workspace = true
 futures-util.workspace = true
 hex.workspace = true
@@ -23,7 +21,6 @@ homarr-definitions.workspace = true
 homarr-integrations.workspace = true
 homarr-redis.workspace = true
 quick-xml.workspace = true
-rand.workspace = true
 regex.workspace = true
 reqwest.workspace = true
 serde.workspace = true
