@@ -99,7 +99,7 @@ fn is_valid_hex_64(value: &str) -> bool {
 /// All zeros or one repeated character (e.g. `000…`, `aaa…`): trivially guessable keys.
 fn is_low_entropy_key(value: &str) -> bool {
     let lower = value.to_ascii_lowercase();
-    lower.chars().all(|c| Some(c) == lower.chars().next())
+    lower.chars().all(|c| lower.starts_with(c))
 }
 
 /// Loads a persisted secret from `<dir>/secrets/<file_name>`, generating and persisting a new one
