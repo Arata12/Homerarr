@@ -13,7 +13,6 @@ homarr-core.workspace = true
 homarr-db.workspace = true
 homarr-definitions.workspace = true
 homarr-widgets.workspace = true
-html-escape.workspace = true
 maud.workspace = true
 serde.workspace = true
 serde_json.workspace = true

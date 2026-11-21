@@ -17,8 +17,8 @@ use maud::{html, Markup, PreEscaped};
 use serde_json::{json, Value};
 
 use super::board_editor::{
-    app_list, cell_style, compute_placements, edit_bar, editor_blob, editor_strings,
-    layout_css, sorted_layouts, usable_integrations, widget_catalog, ItemPlacement,
+    app_list, cell_style, compute_placements, edit_bar, editor_blob, editor_strings, layout_css,
+    sorted_layouts, usable_integrations, widget_catalog, ItemPlacement,
 };
 use crate::icons::{self, icon};
 use crate::layout::{

@@ -364,13 +364,6 @@ pub fn script_json(value: &Value) -> String {
         .replace('\u{2029}', "\\u2029")
 }
 
-/// Wraps a pre-rendered HTML string as a page body.
-// shortcut: compat for pages not yet ported to Maud, remove once all pages use Markup
-pub fn legacy_body(html: &str) -> Markup {
-    // Safe raw HTML: callers build it with html_escape on every interpolated value.
-    PreEscaped(html.to_string())
-}
-
 /// Embeds `value` as `<script type="application/json" id=…>`; read it in JS with
 /// `JSON.parse(document.getElementById(id).textContent)`.
 pub fn json_script(id: &str, value: &Value) -> Markup {

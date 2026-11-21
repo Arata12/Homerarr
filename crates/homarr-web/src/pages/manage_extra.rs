@@ -11,7 +11,7 @@ use homarr_definitions::{
     settings::parse_branding_settings,
 };
 use homarr_widgets::safe_url;
-use maud::{html, Markup, PreEscaped};
+use maud::{html, Markup};
 use serde_json::{json, Map, Value};
 
 use super::manage::{empty_table_row, render_manage_shell, require_admin_or_redirect};
@@ -286,7 +286,7 @@ pub async fn settings_page(
         &headers,
         "/manage/settings",
         "Settings",
-        &content.into_string(),
+        content,
     )
     .await
     .into_response()
@@ -342,8 +342,7 @@ pub async fn search_engines_page(
                             }
                         }
                         @if engines.is_empty() {
-                            // safe: empty_table_row escapes its message (and it is a static string here).
-                            (PreEscaped(empty_table_row(4, "No search engines configured yet.")))
+                            (empty_table_row(4, "No search engines configured yet."))
                         }
                     }
                 }
@@ -356,7 +355,7 @@ pub async fn search_engines_page(
         &headers,
         "/manage/search-engines",
         "Search Engines",
-        &content.into_string(),
+        content,
     )
     .await
     .into_response()
@@ -421,7 +420,7 @@ pub async fn api_reference_page(
             &headers,
             "/reference/api",
             "API Reference",
-            &content.into_string(),
+            content,
         )
         .await
         .into_response();

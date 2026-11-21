@@ -536,36 +536,36 @@ pub async fn oauth_authorize(
         .set_json_ex(&pending_key(&pending_id), &grant, PENDING_TTL_SECS)
         .await?;
 
-    let write_option = if write_requested {
-        r#"<p><label><input type="checkbox" name="access_mode" value="readWrite"> Also allow write access (create, update and delete data)</label></p>"#
-    } else {
-        ""
+    let page = maud::html! {
+        (maud::DOCTYPE)
+        html {
+            head { meta charset="utf-8"; title { "Authorize MCP Access" } }
+            body style="font-family:sans-serif;background:#1a1b1e;color:#fff;padding:2rem" {
+                h2 { "Authorize MCP Access" }
+                p {
+                    strong { (grant.client_name) } " (client " code { (grant.client_id) } ") is requesting access to your Homarr instance."
+                }
+                p { "After approval you will be redirected to " code { (grant.redirect_uri) } "." }
+                form method="post" action="/api/mcp/oauth/authorize" {
+                    input type="hidden" name="pending" value=(pending_id);
+                    p { "Access is read-only unless you allow write access below." }
+                    @if write_requested {
+                        p { label { input type="checkbox" name="access_mode" value="readWrite"; " Also allow write access (create, update and delete data)" } }
+                    }
+                    button type="submit" name="decision" value="approve" style="padding:.6rem 1.2rem;background:#fa5252;color:#fff;border:0;border-radius:6px" { "Approve" }
+                    " "
+                    button type="submit" name="decision" value="deny" style="padding:.6rem 1.2rem;border:0;border-radius:6px" { "Deny" }
+                }
+            }
+        }
     };
-    let page = format!(
-        r#"<!doctype html><html><head><meta charset="utf-8"><title>Authorize MCP Access</title></head><body style="font-family:sans-serif;background:#1a1b1e;color:#fff;padding:2rem">
-<h2>Authorize MCP Access</h2>
-<p><strong>{}</strong> (client <code>{}</code>) is requesting access to your Homarr instance.</p>
-<p>After approval you will be redirected to <code>{}</code>.</p>
-<form method="post" action="/api/mcp/oauth/authorize">
-<input type="hidden" name="pending" value="{}">
-<p>Access is read-only unless you allow write access below.</p>
-{write_option}
-<button type="submit" name="decision" value="approve" style="padding:.6rem 1.2rem;background:#fa5252;color:#fff;border:0;border-radius:6px">Approve</button>
-<button type="submit" name="decision" value="deny" style="padding:.6rem 1.2rem;border:0;border-radius:6px">Deny</button>
-</form>
-</body></html>"#,
-        html_escape::encode_text(&grant.client_name),
-        html_escape::encode_text(&grant.client_id),
-        html_escape::encode_text(&grant.redirect_uri),
-        html_escape::encode_double_quoted_attribute(&pending_id),
-    );
     Ok((
         [
             (header::X_FRAME_OPTIONS, "DENY"),
             (header::CONTENT_SECURITY_POLICY, "frame-ancestors 'none'"),
             (header::CACHE_CONTROL, "no-store"),
         ],
-        Html(page),
+        Html(page.into_string()),
     )
         .into_response())
 }

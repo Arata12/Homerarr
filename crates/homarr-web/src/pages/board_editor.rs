@@ -11,8 +11,6 @@ use homarr_db::{
 };
 use homarr_definitions::IntegrationPermission;
 use homarr_widgets::{all_widget_metadata, widget_option_fields};
-// shortcut: re-export for manage.rs until its port lands, then import from layout directly
-pub use crate::layout::script_json;
 use maud::{html, Markup};
 use serde_json::{json, Map, Value};
 
@@ -677,7 +675,6 @@ pub fn edit_bar(board_name: &str, strings: &Value) -> Markup {
         }
     }
 }
-
 
 #[cfg(test)]
 mod tests {
