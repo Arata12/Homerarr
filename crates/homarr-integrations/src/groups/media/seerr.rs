@@ -607,6 +607,7 @@ mod tests {
 
     fn ctx(kind: IntegrationKind) -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "i".into(),
             name: "Seerr".into(),
             url: "http://seerr:5055".into(),

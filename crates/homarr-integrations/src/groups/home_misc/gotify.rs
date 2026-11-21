@@ -263,6 +263,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "g".into(),
             name: "Gotify".into(),
             url: "http://gotify.local".into(),

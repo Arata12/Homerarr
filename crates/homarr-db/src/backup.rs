@@ -275,6 +275,7 @@ async fn import_entities(
                 external_url: integration.external_url.clone(),
                 kind: integration.kind.clone(),
                 app_id,
+                restricted: integration.restricted,
             },
             &[],
         )
@@ -602,6 +603,7 @@ mod tests {
                 external_url: None,
                 kind: "sonarr".to_string(),
                 app_id: None,
+                restricted: false,
             },
             &[],
         )

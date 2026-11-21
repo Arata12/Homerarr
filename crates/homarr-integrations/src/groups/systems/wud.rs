@@ -120,6 +120,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "w".into(),
             name: "WUD".into(),
             url: "http://wud".into(),

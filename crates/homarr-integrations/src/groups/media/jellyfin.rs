@@ -475,6 +475,7 @@ mod tests {
     #[test]
     fn recent_episodes_collapse_into_their_series() {
         let ctx = IntegrationContext {
+            restricted: false,
             id: "i".into(),
             name: "Jellyfin".into(),
             url: "http://jf".into(),

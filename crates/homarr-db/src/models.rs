@@ -152,6 +152,9 @@ pub struct IntegrationRecord {
     pub kind: String,
     pub app_id: Option<String>,
     pub secret_kinds: Vec<String>,
+    /// Saved by a non-admin: requests must use the SSRF-guarded HTTP client.
+    #[serde(default)]
+    pub restricted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

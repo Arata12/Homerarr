@@ -12,6 +12,8 @@ pub struct IntegrationContext {
     pub external_url: Option<String>,
     pub kind: IntegrationKind,
     pub secrets: HashMap<String, String>,
+    /// Saved by a non-admin: requests go through the SSRF-guarded HTTP client.
+    pub restricted: bool,
 }
 
 impl IntegrationContext {

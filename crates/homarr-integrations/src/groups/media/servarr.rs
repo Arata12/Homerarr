@@ -1196,6 +1196,7 @@ mod tests {
 
     fn ctx(kind: IntegrationKind) -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "i".into(),
             name: "Test".into(),
             url: "http://internal:8989".into(),

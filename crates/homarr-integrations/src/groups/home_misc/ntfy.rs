@@ -136,6 +136,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "n".into(),
             name: "ntfy".into(),
             url: "https://ntfy.example.com".into(),

@@ -899,6 +899,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "ha".into(),
             name: "Home Assistant".into(),
             url: "http://ha.local:8123".into(),

@@ -596,6 +596,7 @@ impl TaskScheduler {
                 external_url: rec.external_url,
                 kind,
                 secrets,
+                restricted: rec.restricted,
             };
             let cached_val: Option<Value> = match job {
                 "dnsHole" => self

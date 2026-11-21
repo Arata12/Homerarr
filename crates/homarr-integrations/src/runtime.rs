@@ -173,6 +173,7 @@ mod tests {
 
     fn ctx(url: &str, password: &str) -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "i1".into(),
             name: "Test".into(),
             url: url.into(),

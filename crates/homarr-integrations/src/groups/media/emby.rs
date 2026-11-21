@@ -179,6 +179,7 @@ mod tests {
     #[test]
     fn maps_latest_items() {
         let ctx = IntegrationContext {
+            restricted: false,
             id: "i".into(),
             name: "Emby".into(),
             url: "http://emby:8096".into(),
