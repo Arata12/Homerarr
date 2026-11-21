@@ -447,6 +447,7 @@ mod tests {
     #[test]
     fn builds_origins_with_port_fallbacks() {
         let mut ctx = IntegrationContext {
+            restricted: false,
             id: "i".into(),
             name: "Unifi".into(),
             url: "http://unifi.local".into(),

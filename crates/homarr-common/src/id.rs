@@ -1,4 +1,5 @@
 use rand::RngCore;
+use sha2::{Digest, Sha256};
 
 /// Generates a new CUID2 identifier compatible with Homarr v2 database IDs.
 pub fn create_id() -> String {
@@ -11,6 +12,11 @@ pub fn generate_secure_random_token(byte_len: usize) -> String {
     let mut bytes = vec![0u8; byte_len];
     rand::rngs::OsRng.fill_bytes(&mut bytes);
     hex::encode(bytes)
+}
+
+/// SHA-256 hex of a bearer token; stored instead of the raw token so a leaked DB holds no live logins.
+pub fn hash_token(token: &str) -> String {
+    hex::encode(Sha256::digest(token.as_bytes()))
 }
 
 #[cfg(test)]

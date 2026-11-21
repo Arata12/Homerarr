@@ -124,6 +124,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "p".into(),
             name: "PatchMon".into(),
             url: "http://patchmon".into(),

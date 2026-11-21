@@ -6,6 +6,7 @@ license.workspace = true
 
 [dependencies]
 aes.workspace = true
+aes-gcm.workspace = true
 axum.workspace = true
 cbc.workspace = true
 cuid2.workspace = true

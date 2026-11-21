@@ -505,6 +505,7 @@ mod tests {
 
     fn redactor(secrets: &[(&str, &str)], auth: ResolvedHttpAuth) -> SecretRedactor {
         let ctx = IntegrationContext {
+            restricted: false,
             id: "id".to_string(),
             name: "name".to_string(),
             url: "http://localhost".to_string(),
@@ -520,6 +521,7 @@ mod tests {
 
     fn ctx(kind: IntegrationKind, secrets: &[(&str, &str)]) -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "id".to_string(),
             name: "name".to_string(),
             url: "http://localhost".to_string(),

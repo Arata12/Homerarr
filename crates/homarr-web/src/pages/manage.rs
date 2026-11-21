@@ -652,7 +652,7 @@ pub async fn invites_page(
     let rows = html! {
         @for inv in &list {
             tr {
-                td { code { "/auth/invite/" (inv.token) } }
+                td { code { (inv.id) } }
                 td { (inv.expiration_date) }
                 td { button.btn.btn-danger.btn-sm type="button" data-api-action={ "/api/invites/" (inv.id) } data-method="DELETE" { "Revoke" } }
             }
@@ -660,10 +660,13 @@ pub async fn invites_page(
     };
     let content = html! {
         div.page-header { h1.page-title { "Invites" } }
-        div.card { button.btn.btn-primary type="button" data-api-action="/api/invites" data-method="POST" { "Generate Invite Link" } }
+        div.card {
+            button.btn.btn-primary type="button" data-api-action="/api/invites" data-method="POST" data-reveal-invite="#invite-link" { "Generate Invite Link" }
+            div #invite-link hidden { p { "Copy this link now; it will not be shown again:" } code {} }
+        }
         div.card.table-wrap {
             table {
-                thead { tr { th { "Invite Path" } th { "Expires (Unix)" } th { "Actions" } } }
+                thead { tr { th { "Invite ID" } th { "Expires (Unix)" } th { "Actions" } } }
                 tbody { (rows_or_empty(rows, 3, "No active invites.")) }
             }
         }
@@ -903,6 +906,9 @@ pub async fn logs_page(
 ) -> impl IntoResponse {
     if let Err(redir) = require_admin_or_redirect(session.as_ref()) {
         return redir.into_response();
+    }
+    if web.app.demo_read_only_active() {
+        return (StatusCode::FORBIDDEN, "Demo mode is read-only").into_response();
     }
     let entries = web.app.logs.recent(150);
     let content = html! {

@@ -16,7 +16,7 @@ pub use grid_algorithm::{
     generate_responsive_grid_for, GridAlgorithmInput, GridAlgorithmItem, GridAlgorithmOutput,
     GridItemType,
 };
-pub use id::{create_id, generate_secure_random_token};
+pub use id::{create_id, generate_secure_random_token, hash_token};
 pub use superjson::{deserialize_superjson, serialize_superjson, EMPTY_SUPERJSON};
 pub use url::{
     ip_matches_any, is_blocked_ip, is_http_url, redact_url_query, remove_trailing_slash,

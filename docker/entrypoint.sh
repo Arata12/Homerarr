@@ -2,7 +2,7 @@
 # Entrypoint for the Debian runner image (Dockerfile target `runner`).
 # Starts as root only long enough to fix /appdata ownership, then drops to
 # PUID:PGID (default 1000:1000, the `homarr` user baked into the image).
-# SECRET_ENCRYPTION_KEY_FILE / AUTH_SECRET_FILE are read by the server itself.
+# SECRET_ENCRYPTION_KEY_FILE is read by the server itself.
 set -e
 
 PUID=${PUID:-1000}

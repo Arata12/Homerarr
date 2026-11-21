@@ -139,6 +139,7 @@ pub async fn create_integration(
             external_url: body.external_url,
             kind: kind.as_str().to_string(),
             app_id: body.app_id,
+            restricted: !session.is_admin(),
         },
         &enc_secrets,
     )
@@ -220,6 +221,8 @@ pub async fn update_integration(
         new_url,
         body.external_url.as_deref(),
         body.app_id.as_deref(),
+        // Admins vouch for the URL; anyone else's save keeps requests on the guarded client.
+        !session.is_admin(),
         enc.as_deref(),
     )
     .await?;
@@ -260,6 +263,7 @@ async fn load_ctx(state: &AppState, id: &str) -> HomarrResult<IntegrationContext
         external_url: rec.external_url,
         kind,
         secrets,
+        restricted: rec.restricted,
     })
 }
 

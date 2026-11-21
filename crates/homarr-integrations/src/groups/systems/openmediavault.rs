@@ -518,6 +518,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "omv".into(),
             name: "OMV".into(),
             url: "http://omv".into(),

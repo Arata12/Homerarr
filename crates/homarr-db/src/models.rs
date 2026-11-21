@@ -94,6 +94,8 @@ pub struct GroupWithDetails {
 #[serde(rename_all = "camelCase")]
 pub struct InviteRecord {
     pub id: String,
+    /// Raw token, known only after create/lookup (the DB stores its hash); empty in listings.
+    #[serde(skip_serializing_if = "String::is_empty", default)]
     pub token: String,
     pub expiration_date: i64,
     pub creator_id: String,
@@ -152,6 +154,9 @@ pub struct IntegrationRecord {
     pub kind: String,
     pub app_id: Option<String>,
     pub secret_kinds: Vec<String>,
+    /// Saved by a non-admin: requests must use the SSRF-guarded HTTP client.
+    #[serde(default)]
+    pub restricted: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

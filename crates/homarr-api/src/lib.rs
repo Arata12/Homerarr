@@ -1479,6 +1479,16 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn read_only_demo_blocks_backup_export_and_logs() {
+        let (_state, app) = setup_test_state_with(|c| c.demo_read_only = true).await;
+        let admin = login_cookie(&app, "demo", "demo").await;
+        for uri in ["/api/backup/export", "/api/logs"] {
+            let (status, body) = send_json(&app, "GET", uri, Some(&admin), json!({})).await;
+            assert_eq!(status, StatusCode::FORBIDDEN, "{uri}: {body}");
+        }
+    }
+
+    #[tokio::test]
     async fn custom_widget_reads_search_engine_and_settings_validation() {
         let (_state, app) = setup_test_state().await;
         for uri in ["/api/custom-widgets", "/api/custom-widgets/missing"] {
@@ -1873,14 +1883,27 @@ mod tests {
                 .unwrap_err();
             assert!(matches!(err, HomarrError::BadRequest(_)), "{bad}");
         }
-        create_test_integration(&state, &creator, "http://192.168.1.10:8989/")
+        let id = create_test_integration(&state, &creator, "http://192.168.1.10:8989/")
             .await
             .unwrap();
+        let restricted = |id: String| {
+            let db = state.db.clone();
+            async move {
+                homarr_db::repos::integrations::get_by_id(&db, &id)
+                    .await
+                    .unwrap()
+                    .unwrap()
+                    .restricted
+            }
+        };
+        // Requests for integrations saved by non-admins must use the guarded client.
+        assert!(restricted(id).await);
 
         let admin = test_session(vec![P::Admin, P::IntegrationCreate]);
-        create_test_integration(&state, &admin, "http://127.0.0.1:1/")
+        let id = create_test_integration(&state, &admin, "http://127.0.0.1:1/")
             .await
             .unwrap();
+        assert!(!restricted(id).await);
     }
 
     #[tokio::test]

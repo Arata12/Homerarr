@@ -681,6 +681,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "t".into(),
             name: "TrueNAS".into(),
             url: "https://nas.local".into(),

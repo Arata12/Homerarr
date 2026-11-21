@@ -453,6 +453,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "n".into(),
             name: "Nextcloud".into(),
             url: "https://cloud.example.com".into(),
