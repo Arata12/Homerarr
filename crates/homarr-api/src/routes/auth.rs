@@ -1,5 +1,5 @@
 use axum::{
-    extract::{Path, State},
+    extract::{ConnectInfo, Extension, Path, State},
     http::{
         header::{COOKIE, SET_COOKIE},
         HeaderMap, HeaderValue, StatusCode,
@@ -10,15 +10,17 @@ use axum::{
 use chrono::Utc;
 use homarr_auth::{
     build_clear_session_cookie, build_session_cookie, cookie_secure, create_api_key,
-    create_session, delete_session, hash_password, session_cookie_name, verify_password,
-    OptionalAuth, RequireAdmin,
+    create_session, delete_session, hash_password, session_cookie_name, verify_dummy_password,
+    verify_password, OptionalAuth, RequireAdmin, RequireAuth,
 };
 use homarr_common::{HomarrError, HomarrResult};
 use homarr_db::repos::{api_keys, boards, groups, invites, settings, users};
 use homarr_db::seed;
 use serde::Deserialize;
 use serde_json::{json, Value};
+use std::net::SocketAddr;
 
+use crate::login_throttle::{client_ip, LoginThrottle};
 use crate::state::AppState;
 
 static REGISTER_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
@@ -32,18 +34,37 @@ pub struct LoginBody {
 
 pub async fn login(
     State(state): State<AppState>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     req_headers: HeaderMap,
     Json(body): Json<LoginBody>,
 ) -> HomarrResult<impl IntoResponse> {
     throw_if_credentials_disabled(&state)?;
+    let ip = client_ip(
+        peer.map(|Extension(ConnectInfo(a))| a),
+        &req_headers,
+        &state.config,
+    );
+    let throttle = LoginThrottle::new(&state.redis, ip, &body.name);
+    throttle.check().await?;
+
     let invalid = || HomarrError::Unauthorized("Invalid username or password".into());
-    let user = users::find_credentials_by_name_ci(&state.db, body.name.trim())
-        .await?
-        .ok_or_else(invalid)?;
-    let hash = user.password.as_deref().ok_or_else(invalid)?;
+    let user = users::find_credentials_by_name_ci(&state.db, body.name.trim()).await?;
+    // Unknown users and users without a password still pay for one bcrypt verify, so response
+    // time does not reveal whether the account exists.
+    let user = match user {
+        Some(user) if user.password.is_some() => user,
+        _ => {
+            verify_dummy_password(&body.password).await;
+            throttle.record_failure().await;
+            return Err(invalid());
+        }
+    };
+    let hash = user.password.as_deref().unwrap_or_default();
     if !verify_password(&body.password, hash).await? {
+        throttle.record_failure().await;
         return Err(invalid());
     }
+    throttle.record_success().await;
 
     let token = create_session(&state.db, &user.id, state.config.auth_session_expiry_secs).await?;
     let cookie = build_session_cookie(
@@ -167,7 +188,7 @@ pub async fn register(
     // shortcut: process-local lock, needs a DB-level guard if Homarr ever runs multiple replicas.
     let _register_guard = REGISTER_LOCK.lock().await;
     let existing_count = users::count(&state.db).await?;
-    let mut invite_id_to_delete = None;
+    let mut invite_token = None;
 
     if existing_count > 0 {
         let token = body
@@ -184,7 +205,7 @@ pub async fn register(
         if invite.expiration_date <= Utc::now().timestamp() {
             return Err(HomarrError::Forbidden("Invite token has expired".into()));
         }
-        invite_id_to_delete = Some(invite.id);
+        invite_token = Some(invite.token);
     }
 
     if users::find_by_name_ci(&state.db, &username)
@@ -195,6 +216,14 @@ pub async fn register(
     }
 
     let password_hash = hash_password(&body.password).await?;
+
+    // Consume the invite before creating the user: the conditional delete succeeds for exactly one
+    // caller, so one invite can never produce two users.
+    if let Some(token) = invite_token {
+        if !invites::consume_by_token(&state.db, &token, Utc::now().timestamp()).await? {
+            return Err(HomarrError::Forbidden("Invalid invite token".into()));
+        }
+    }
     let user = users::create(
         &state.db,
         users::CreateUserInput {
@@ -258,10 +287,6 @@ pub async fn register(
         }
     }
 
-    if let Some(iid) = invite_id_to_delete {
-        let _ = invites::delete(&state.db, &iid).await;
-    }
-
     let token = create_session(&state.db, &user.id, state.config.auth_session_expiry_secs).await?;
     let cookie = build_session_cookie(
         &state.config.auth_cookie_prefix,
@@ -278,7 +303,7 @@ pub async fn register(
 }
 
 pub async fn list_api_keys(
-    RequireAdmin(session): RequireAdmin,
+    RequireAuth(session): RequireAuth,
     State(state): State<AppState>,
 ) -> HomarrResult<Json<Value>> {
     let keys = api_keys::list_by_user(&state.db, &session.user_id).await?;
@@ -310,12 +335,17 @@ pub async fn create_user_api_key(
 }
 
 pub async fn delete_user_api_key(
-    RequireAdmin(session): RequireAdmin,
+    RequireAuth(session): RequireAuth,
     State(state): State<AppState>,
     Path(id): Path<String>,
 ) -> HomarrResult<Json<Value>> {
     session.require_writable(state.demo_read_only_active())?;
-    let deleted = api_keys::delete(&state.db, &id).await?;
+    // Admins may revoke any key; everyone else only their own (a foreign id looks like a missing one).
+    let deleted = if session.is_admin() {
+        api_keys::delete(&state.db, &id).await?
+    } else {
+        api_keys::delete_owned(&state.db, &id, &session.user_id).await?
+    };
     if !deleted {
         return Err(HomarrError::NotFound("API key not found".into()));
     }

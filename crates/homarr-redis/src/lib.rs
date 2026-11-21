@@ -51,6 +51,21 @@ impl MemoryRedis {
         guard.insert(key.to_string(), (value.to_string(), Some(deadline)));
     }
 
+    async fn incr_ex(&self, key: &str, ttl_secs: u64) -> u64 {
+        let now = Instant::now();
+        let mut guard = self.kv.write().await;
+        let live = guard
+            .get(key)
+            .filter(|(_, exp)| exp.is_none_or(|deadline| now < deadline))
+            .map(|(val, exp)| (val.parse::<u64>().unwrap_or(0), *exp));
+        let (count, deadline) = match live {
+            Some((count, exp)) => (count + 1, exp),
+            None => (1, Some(now + Duration::from_secs(ttl_secs))),
+        };
+        guard.insert(key.to_string(), (count.to_string(), deadline));
+        count
+    }
+
     async fn del(&self, key: &str) {
         self.kv.write().await.remove(key);
         self.sets.write().await.remove(key);
@@ -174,6 +189,29 @@ impl RedisStore {
             Backend::Memory(mem) => mem.set_ex(key, value, ttl_secs).await,
         }
         Ok(())
+    }
+
+    /// Increments a counter and returns the new value. The TTL starts when the counter is
+    /// created (fixed window) and is not extended by later increments.
+    pub async fn incr_ex(&self, key: &str, ttl_secs: u64) -> HomarrResult<u64> {
+        match &self.backend {
+            Backend::Live(conn) => {
+                let mut c = conn.clone();
+                let count: u64 = c
+                    .incr(key, 1)
+                    .await
+                    .map_err(|err| HomarrError::Upstream(format!("Redis INCR failed: {err}")))?;
+                if count == 1 {
+                    c.expire::<_, ()>(key, ttl_secs as i64)
+                        .await
+                        .map_err(|err| {
+                            HomarrError::Upstream(format!("Redis EXPIRE failed: {err}"))
+                        })?;
+                }
+                Ok(count)
+            }
+            Backend::Memory(mem) => Ok(mem.incr_ex(key, ttl_secs).await),
+        }
     }
 
     pub async fn delete(&self, key: &str) -> HomarrResult<()> {
@@ -301,6 +339,12 @@ mod tests {
         assert_eq!(store.get_string("k1").await.unwrap().as_deref(), Some("v1"));
         store.delete("k1").await.unwrap();
         assert_eq!(store.get_string("k1").await.unwrap(), None);
+
+        assert_eq!(store.incr_ex("c1", 60).await.unwrap(), 1);
+        assert_eq!(store.incr_ex("c1", 60).await.unwrap(), 2);
+        assert_eq!(store.get_string("c1").await.unwrap().as_deref(), Some("2"));
+        store.delete("c1").await.unwrap();
+        assert_eq!(store.incr_ex("c1", 60).await.unwrap(), 1);
 
         store.register_ping_url("https://homarr.dev").await.unwrap();
         assert_eq!(

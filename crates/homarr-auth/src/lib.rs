@@ -6,13 +6,13 @@ pub mod session;
 
 pub use api_key::{authenticate_api_key, create_api_key, API_KEY_HEADER_NAME};
 pub use extractors::{AuthContextProvider, OptionalAuth, RequireAdmin, RequireAuth};
-pub use password::{hash_password, verify_password};
+pub use password::{hash_password, verify_dummy_password, verify_password};
 pub use permissions::{
     can_view_board, check_board_permission, check_integration_permission, AuthSession,
 };
 pub use session::{
     build_clear_session_cookie, build_session_cookie, cookie_secure, create_session,
-    delete_session, get_session_from_token, session_cookie_name,
+    delete_session, get_session_from_token, session_cookie_name, session_token_from_headers,
 };
 
 #[cfg(test)]

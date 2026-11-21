@@ -203,3 +203,28 @@ pub async fn delete(db: &Database, id: &str) -> HomarrResult<bool> {
     };
     Ok(affected > 0)
 }
+
+/// Deletes an API key only if it belongs to `user_id`.
+pub async fn delete_owned(db: &Database, id: &str, user_id: &str) -> HomarrResult<bool> {
+    let affected = match db {
+        Database::Sqlite(pool) => {
+            sqlx::query(r#"DELETE FROM "apiKey" WHERE "id" = ? AND "user_id" = ?"#)
+                .bind(id)
+                .bind(user_id)
+                .execute(pool)
+                .await
+                .map_err(map_sqlx_err)?
+                .rows_affected()
+        }
+        Database::Postgres(pool) => {
+            sqlx::query(r#"DELETE FROM "apiKey" WHERE "id" = $1 AND "user_id" = $2"#)
+                .bind(id)
+                .bind(user_id)
+                .execute(pool)
+                .await
+                .map_err(map_sqlx_err)?
+                .rows_affected()
+        }
+    };
+    Ok(affected > 0)
+}

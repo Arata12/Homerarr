@@ -144,3 +144,28 @@ pub async fn delete(db: &Database, id: &str) -> HomarrResult<bool> {
     };
     Ok(affected > 0)
 }
+
+/// Atomically consumes an unexpired invite by token; true only for the single caller that deleted it.
+pub async fn consume_by_token(db: &Database, token: &str, now_secs: i64) -> HomarrResult<bool> {
+    let affected = match db {
+        Database::Sqlite(pool) => {
+            sqlx::query(r#"DELETE FROM "invite" WHERE "token" = ? AND "expiration_date" > ?"#)
+                .bind(token)
+                .bind(now_secs)
+                .execute(pool)
+                .await
+                .map_err(map_sqlx_err)?
+                .rows_affected()
+        }
+        Database::Postgres(pool) => {
+            sqlx::query(r#"DELETE FROM "invite" WHERE "token" = $1 AND "expiration_date" > $2"#)
+                .bind(token)
+                .bind(secs_to_naive(now_secs))
+                .execute(pool)
+                .await
+                .map_err(map_sqlx_err)?
+                .rows_affected()
+        }
+    };
+    Ok(affected == 1)
+}
