@@ -7,17 +7,20 @@ ignore any upstream docs, skills or habits that assume it.
 
 ## Git workflow (mandatory)
 
-- Work directly on `main` (the default branch). Do not create feature or session branches unless the owner asks.
-- The owner works from a phone: they cannot merge, tag or delete branches by hand. Finish the whole flow yourself.
-- Commit with conventional commits (`feat:`, `fix:`, `chore:` …) and push to `main`.
+- Never commit directly to `main` (the default branch). Branch off an up-to-date `main` with a descriptive name
+  (`<type>/<short-description>`, e.g. `feat/live-widgets`, `fix/csp-header`).
+- Commit with conventional commits (`feat:`, `fix:`, `chore:` …), push the branch and open a pull request against
+  `main`. Keep each PR focused on one change.
+- A PR is merged only after CI is green and it has been reviewed. Delete the branch after merging.
 
 ## Releases
 
-1. Bump `[workspace.package] version` in the root `Cargo.toml` (crates inherit it with `version.workspace = true`)
-   and refresh the lockfile with `cargo update --workspace`. Commit as `chore(release): vX.Y.Z` on `main`.
-2. Push a `vX.Y.Z` tag. If tag pushes are blocked, run the `Release` workflow (`release.yml`) via
-   `workflow_dispatch` with input `tag=vX.Y.Z` on `main`: it creates the release and the tag on the `main` head, so
-   the bump commit must already be there.
+1. On a `release/vX.Y.Z` branch, bump `[workspace.package] version` in the root `Cargo.toml` (crates inherit it with
+   `version.workspace = true`) and refresh the lockfile with `cargo update --workspace`. Commit as
+   `chore(release): vX.Y.Z` and merge it through a PR.
+2. After the merge, push a `vX.Y.Z` tag on `main`. If tag pushes are blocked, run the `Release` workflow
+   (`release.yml`) via `workflow_dispatch` with input `tag=vX.Y.Z` on `main`: it creates the release and the tag on
+   the `main` head, so the bump commit must already be merged.
 3. The workflow builds static musl binaries (amd64, arm64), attaches them to the release and publishes
    `ghcr.io/arata12/homerarr:<version>` plus `latest` (stable releases only).
 
