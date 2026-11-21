@@ -356,7 +356,7 @@ pub async fn settings_page(
         &headers,
         "/manage/settings",
         "Settings",
-        &content,
+        legacy_body(&content),
     )
     .await
     .into_response()
@@ -390,7 +390,7 @@ pub async fn search_engines_page(
         ));
     }
     if rows.is_empty() {
-        rows = empty_table_row(4, "No search engines configured yet.");
+        rows = empty_table_row(4, "No search engines configured yet.").into_string();
     }
     let content = format!(
         r##"<div class="page-header"><h1 class="page-title">Search Engines</h1></div>
@@ -422,7 +422,7 @@ pub async fn search_engines_page(
         &headers,
         "/manage/search-engines",
         "Search Engines",
-        &content,
+        legacy_body(&content),
     )
     .await
     .into_response()
@@ -498,7 +498,7 @@ pub async fn api_reference_page(
             &headers,
             "/reference/api",
             "API Reference",
-            &content,
+            legacy_body(&content),
         )
         .await
         .into_response();
