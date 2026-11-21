@@ -62,6 +62,8 @@ impl Clients {
             .timeout(Duration::from_secs(15))
             .connect_timeout(Duration::from_secs(10))
             .redirect(Policy::none())
+            // Env proxies resolve DNS themselves and would bypass the connect-time filter.
+            .no_proxy()
             .dns_resolver(Arc::new(BlockedIpFilteringResolver))
             .user_agent(concat!("Homarr/", env!("CARGO_PKG_VERSION")));
         for cert in extra_certs {
@@ -104,6 +106,8 @@ impl HttpClientFactory {
             .timeout(Duration::from_secs(10))
             .connect_timeout(Duration::from_secs(5))
             .danger_accept_invalid_certs(true)
+            // Env proxies would bypass the connect-time resolver filter below.
+            .no_proxy()
             // Hostnames resolving to blocked IPs are dropped at connect time; IP-literal and
             // localhost redirect targets never reach the resolver, so the policy checks them.
             .dns_resolver(Arc::new(BlockedIpFilteringResolver))

@@ -460,7 +460,8 @@ impl ExternalDataService {
             ));
         }
 
-        let clean_id = identifier.trim();
+        let clean_id = validate_release_identifier(provider, identifier.trim())?;
+        let clean_id = clean_id.as_str();
         let url = match provider {
             "github" => format!("https://api.github.com/repos/{clean_id}/releases/latest"),
             "gitlab" => {
@@ -591,7 +592,7 @@ impl ExternalDataService {
         if let Ok(status) = tcp_minecraft_slp(host, port).await {
             return status;
         }
-        if !self.config.no_external_connection {
+        if !self.config.no_external_connection && is_valid_minecraft_host(host) {
             let url = format!("https://api.mcsrvstat.us/3/{host}:{port}");
             if let Ok(resp) = self.http.standard().get(&url).send().await {
                 if let Ok(json) = resp.json::<Value>().await {
@@ -1021,4 +1022,107 @@ pub fn json_map_summary(entries: Vec<FeedEntry>) -> Value {
         "entries": entries,
         "count": 0
     })
+}
+
+/// Validates a release identifier before it is placed in a URL path on a fixed host: segments of
+/// `[A-Za-z0-9._-]` separated by `/` (npm may start with `@scope/`); empty, `.` and `..` segments
+/// are rejected. Returns the identifier with every segment percent-encoded.
+fn validate_release_identifier(provider: &str, identifier: &str) -> HomarrResult<String> {
+    let invalid = || HomarrError::BadRequest(format!("Invalid {provider} release identifier"));
+    let rest = match identifier.strip_prefix('@') {
+        Some(scoped) if provider == "npm" => scoped,
+        _ => identifier,
+    };
+    let scoped = rest.len() != identifier.len();
+    let mut out = Vec::new();
+    for segment in rest.split('/') {
+        let ok = !segment.is_empty()
+            && segment != "."
+            && segment != ".."
+            && segment
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-'));
+        if !ok {
+            return Err(invalid());
+        }
+        out.push(segment);
+    }
+    if scoped && out.len() != 2 {
+        return Err(invalid());
+    }
+    // The charset is already URL-safe, so encoding leaves the segments unchanged; it is kept as
+    // defense in depth should the allowed set ever grow.
+    let encoded: Vec<String> = out
+        .iter()
+        .map(|seg| url::form_urlencoded::byte_serialize(seg.as_bytes()).collect())
+        .collect();
+    let joined = encoded.join("/");
+    Ok(if scoped { format!("@{joined}") } else { joined })
+}
+
+/// Hostname (letters, digits, `.`, `-`) or IP literal; anything else must not reach a URL.
+fn is_valid_minecraft_host(host: &str) -> bool {
+    if host.parse::<std::net::IpAddr>().is_ok() {
+        return true;
+    }
+    !host.is_empty()
+        && host.len() <= 253
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
+}
+
+#[cfg(test)]
+mod release_validation_tests {
+    use super::*;
+
+    #[test]
+    fn release_identifier_rejects_path_tricks() {
+        for bad in [
+            "x/../../y",
+            "a?b",
+            "a#b",
+            "",
+            "a//b",
+            "./a",
+            "a/%2e%2e/b",
+            "a b",
+        ] {
+            assert!(validate_release_identifier("github", bad).is_err(), "{bad}");
+        }
+        assert!(validate_release_identifier("github", "@scope/pkg").is_err());
+        assert!(validate_release_identifier("npm", "@scope").is_err());
+    }
+
+    #[test]
+    fn release_identifier_accepts_normal_ids() {
+        assert_eq!(
+            validate_release_identifier("github", "homarr-labs/homarr").unwrap(),
+            "homarr-labs/homarr"
+        );
+        assert_eq!(
+            validate_release_identifier("npm", "@types/node").unwrap(),
+            "@types/node"
+        );
+        assert_eq!(
+            validate_release_identifier("npm", "left-pad").unwrap(),
+            "left-pad"
+        );
+        assert_eq!(
+            validate_release_identifier("dockerHub", "library/nginx").unwrap(),
+            "library/nginx"
+        );
+    }
+
+    #[test]
+    fn minecraft_host_charset() {
+        assert!(is_valid_minecraft_host("mc.example.com"));
+        assert!(is_valid_minecraft_host("10.0.0.5"));
+        assert!(is_valid_minecraft_host("::1"));
+        assert!(!is_valid_minecraft_host("a/b"));
+        assert!(!is_valid_minecraft_host("a?b"));
+        assert!(!is_valid_minecraft_host("a#b"));
+        assert!(!is_valid_minecraft_host("user@host"));
+        assert!(!is_valid_minecraft_host(""));
+    }
 }

@@ -6,7 +6,7 @@ use axum::{
     Json,
 };
 use homarr_auth::{check_integration_permission, RequireAuth};
-use homarr_common::{HomarrError, HomarrResult};
+use homarr_common::{validate_outbound_url, HomarrError, HomarrResult};
 use homarr_db::{
     models::{GroupPermissionEntry, IntegrationRecord, UserPermissionEntry},
     repos::integrations::{self, IntegrationInput},
@@ -83,6 +83,28 @@ pub struct CreateIntegrationBody {
     pub secrets: Vec<SecretPairBody>,
 }
 
+/// Non-admins may not point integrations at loopback, link-local or metadata addresses
+/// (private homelab hosts stay allowed); admins are unrestricted.
+fn validate_integration_url(session: &homarr_auth::AuthSession, url: &str) -> HomarrResult<()> {
+    if session.is_admin() {
+        return Ok(());
+    }
+    validate_outbound_url(url, None)
+        .map(|_| ())
+        .map_err(|err| match err {
+            HomarrError::BadRequest(msg) => {
+                HomarrError::BadRequest(format!("Integration URL not allowed: {msg}"))
+            }
+            other => other,
+        })
+}
+
+fn url_origin(raw: &str) -> Option<String> {
+    url::Url::parse(raw)
+        .ok()
+        .map(|u| u.origin().ascii_serialization())
+}
+
 pub async fn create_integration(
     RequireAuth(session): RequireAuth,
     State(state): State<AppState>,
@@ -99,6 +121,8 @@ pub async fn create_integration(
             "Mock integration is disabled (set UNSAFE_ENABLE_MOCK_INTEGRATION=true)".into(),
         ));
     }
+
+    validate_integration_url(&session, body.url.trim())?;
 
     let mut enc_secrets = Vec::new();
     for s in &body.secrets {
@@ -153,6 +177,32 @@ pub async fn update_integration(
     session.require_writable(state.demo_read_only_active())?;
     check_integration_permission(&state.db, &session, &id, IntegrationPermission::Full).await?;
 
+    let new_url = body.url.trim();
+    if !session.is_admin() {
+        let existing = integrations::get_by_id(&state.db, &id)
+            .await?
+            .ok_or_else(|| HomarrError::NotFound("Integration not found".into()))?;
+        if existing.url.trim() != new_url {
+            validate_integration_url(&session, new_url)?;
+            let new_origin = url_origin(new_url);
+            if new_origin.is_none() || new_origin != url_origin(&existing.url) {
+                // Stored secrets would otherwise be sent to the new origin.
+                let existing_secrets = integrations::get_secrets(&state.db, &id).await?;
+                let supplied = body.secrets.as_deref().unwrap_or(&[]);
+                let all_resupplied = existing_secrets.iter().all(|e| {
+                    supplied
+                        .iter()
+                        .any(|s| s.kind == e.kind && !s.value.is_empty())
+                });
+                if !all_resupplied {
+                    return Err(HomarrError::BadRequest(
+                        "Re-enter the credentials when changing the integration URL".into(),
+                    ));
+                }
+            }
+        }
+    }
+
     let enc = if let Some(ref pairs) = body.secrets {
         let mut out = Vec::with_capacity(pairs.len());
         for s in pairs {
@@ -167,7 +217,7 @@ pub async fn update_integration(
         &state.db,
         &id,
         body.name.trim(),
-        body.url.trim(),
+        new_url,
         body.external_url.as_deref(),
         body.app_id.as_deref(),
         enc.as_deref(),
