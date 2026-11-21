@@ -17,12 +17,12 @@ use maud::{html, Markup, PreEscaped};
 use serde_json::{json, Value};
 
 use super::board_editor::{
-    app_list, cell_style, compute_placements, edit_bar_html, editor_blob, editor_strings,
-    layout_css, script_json, sorted_layouts, usable_integrations, widget_catalog, ItemPlacement,
+    app_list, cell_style, compute_placements, edit_bar, editor_blob, editor_strings,
+    layout_css, sorted_layouts, usable_integrations, widget_catalog, ItemPlacement,
 };
 use crate::icons::{self, icon};
 use crate::layout::{
-    build_spotlight_items, render_page, urlencoding, PageContext, ServerUiSettings,
+    build_spotlight_items, render_page, script_json, urlencoding, PageContext, ServerUiSettings,
 };
 use crate::WebState;
 
@@ -743,8 +743,7 @@ async fn render_full_board(
         );
         let editor_js = format!("window.__HOMARR_EDITOR__ = {};", script_json(&blob));
         (
-            // safe: edit_bar_html escapes the board name and strings it interpolates
-            PreEscaped(edit_bar_html(&full.board.name, &editor_strings)),
+            edit_bar(&full.board.name, &editor_strings),
             html! {
                 div #editor-modal-root {}
                 // safe: script_json escapes `<`, `>` and `&`, so the data cannot close the tag
@@ -752,7 +751,7 @@ async fn render_full_board(
             },
         )
     } else {
-        (PreEscaped(String::new()), html! {})
+        (html! {}, html! {})
     };
 
     let page_title = full

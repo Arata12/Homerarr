@@ -11,13 +11,14 @@ use homarr_db::{
 };
 use homarr_definitions::IntegrationPermission;
 use homarr_widgets::{all_widget_metadata, widget_option_fields};
+// shortcut: re-export for manage.rs until its port lands, then import from layout directly
+pub use crate::layout::script_json;
 use maud::{html, Markup};
 use serde_json::{json, Map, Value};
 
 use crate::i18n::I18nCatalog;
 use crate::icons::{self, icon};
 // Re-exported for pages that still import it from here.
-pub use crate::layout::script_json;
 use crate::layout::urlencoding;
 
 pub const MAX_ITEM_HEIGHT: i32 = 32;
@@ -677,10 +678,6 @@ pub fn edit_bar(board_name: &str, strings: &Value) -> Markup {
     }
 }
 
-// shortcut: String form for board.rs until it is ported to Maud, then drop this.
-pub fn edit_bar_html(board_name: &str, strings: &Value) -> String {
-    edit_bar(board_name, strings).into_string()
-}
 
 #[cfg(test)]
 mod tests {
@@ -761,7 +758,7 @@ mod tests {
 
     #[test]
     fn edit_bar_escapes_board_name() {
-        let html = edit_bar_html(r#"<b>"x"&"#, &json!({ "editingLayout": "<i>" }));
+        let html = edit_bar(r#"<b>"x"&"#, &json!({ "editingLayout": "<i>" })).into_string();
         assert!(html.contains("Editing: &lt;b&gt;&quot;x&quot;&amp;</strong>"));
         assert!(html.contains(r#"aria-label="&lt;i&gt;""#));
         assert!(html.contains(r#"href="/boards/%3Cb%3E%22x%22%26/settings""#));
