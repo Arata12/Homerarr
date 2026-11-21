@@ -3,6 +3,7 @@ use std::collections::HashSet;
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
 use chrono::Utc;
 use homarr_common::{serialize_superjson, HomarrError, HomarrResult};
+use homarr_definitions::settings::DEFAULT_SERVER_SETTINGS_KEYS;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -147,6 +148,8 @@ pub async fn import_backup_json(
     let encoded_settings = bundle
         .server_settings
         .iter()
+        // Unknown keys are skipped so a crafted backup cannot plant arbitrary setting rows.
+        .filter(|(k, _)| DEFAULT_SERVER_SETTINGS_KEYS.contains(&k.as_str()))
         .map(|(k, v)| Ok::<_, HomarrError>((k.as_str(), serialize_superjson(v)?)))
         .collect::<HomarrResult<Vec<_>>>()?;
 
@@ -687,6 +690,24 @@ mod tests {
         assert_eq!(again.boards.imported, 0);
         assert_eq!(again.boards.skipped, 1);
         assert_eq!(again.users.skipped, 1);
+    }
+
+    #[tokio::test]
+    async fn import_skips_unknown_server_setting_keys() {
+        let mut bundle = source_bundle().await;
+        let known = bundle.server_settings.len();
+        bundle
+            .server_settings
+            .insert("notASetting".to_string(), json!({ "x": 1 }));
+        let db = fresh_db().await;
+
+        let summary = import_backup_json(&db, &bundle).await.unwrap();
+
+        assert_eq!(summary.server_settings, known);
+        assert!(settings::get_setting_raw(&db, "notASetting")
+            .await
+            .unwrap()
+            .is_none());
     }
 
     #[tokio::test]
