@@ -904,6 +904,80 @@
     }
   });
 
+  // Live widget refresh: poll each data widget's card endpoint and morph the result in place.
+  (function () {
+    if (typeof Idiomorph === "undefined" || typeof fetch !== "function") return;
+    const MAX_DELAY_MS = 10 * 60 * 1000;
+    // Edit-mode controls live inside .grid-item next to the card; they are re-sent as-is so the morph keeps them.
+    const EDITOR_PARTS = ".item-edit-overlay, .item-edit-controls, .item-resize-handle";
+    const jitter = (ms) => ms * (0.9 + Math.random() * 0.2);
+    const widgets = [];
+
+    function schedule(w, ms) {
+      clearTimeout(w.timer);
+      if (w.stopped) return;
+      w.timer = setTimeout(() => refresh(w), ms);
+    }
+
+    async function refresh(w) {
+      if (w.stopped || w.busy) return;
+      if (document.hidden || document.body.classList.contains("edit-mode") || !w.el.isConnected) {
+        // Paused: visibilitychange / edit-mode exit resumes via resume().
+        w.paused = true;
+        return;
+      }
+      w.busy = true;
+      w.paused = false;
+      let next = jitter(w.base);
+      try {
+        const resp = await fetch(w.url, { credentials: "same-origin", headers: { Accept: "text/html" } });
+        if (resp.status === 404) {
+          w.stopped = true;
+        } else if (!resp.ok) {
+          throw new Error("HTTP " + resp.status);
+        } else {
+          const html = await resp.text();
+          // The user may have entered edit mode while the request was in flight.
+          if (!document.body.classList.contains("edit-mode") && w.el.isConnected) {
+            const keep = Array.from(w.el.children)
+              .filter((c) => c.matches(EDITOR_PARTS))
+              .map((c) => c.outerHTML)
+              .join("");
+            Idiomorph.morph(w.el, keep + html, { morphStyle: "innerHTML" });
+          }
+          w.delay = w.base;
+        }
+      } catch (_) {
+        w.delay = Math.min((w.delay || w.base) * 2, MAX_DELAY_MS);
+        next = jitter(w.delay);
+      } finally {
+        w.busy = false;
+      }
+      schedule(w, next);
+    }
+
+    // Wake paused widgets, staggered so they do not all hit the server at once.
+    function resume() {
+      if (document.hidden || document.body.classList.contains("edit-mode")) return;
+      widgets.forEach((w) => {
+        if (w.paused && !w.stopped && !w.busy) schedule(w, 200 + Math.random() * 3000);
+      });
+    }
+
+    document.querySelectorAll(".grid-item[data-refresh-secs][data-refresh-url]").forEach((el) => {
+      const secs = parseInt(el.getAttribute("data-refresh-secs") || "", 10);
+      const url = el.getAttribute("data-refresh-url");
+      if (!(secs > 0) || !url) return;
+      const w = { el, url, base: secs * 1000, delay: secs * 1000, timer: 0, busy: false, paused: false, stopped: false };
+      widgets.push(w);
+      schedule(w, jitter(w.base));
+    });
+    if (!widgets.length) return;
+    document.addEventListener("visibilitychange", resume);
+    // Edit mode toggles a body class; resume once it is left.
+    new MutationObserver(resume).observe(document.body, { attributes: true, attributeFilter: ["class"] });
+  })();
+
   // Live WebSocket events
   try {
     const proto = location.protocol === "https:" ? "wss:" : "ws:";

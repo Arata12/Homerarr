@@ -78,6 +78,8 @@ docker/                   # Dockerfile.dev / .release / .workshop, entrypoint
   handlers: put JS in `assets/static/`, pass data with `data-*` or `layout::json_script` (the UI sends a strict CSP).
 - Outbound HTTP must use `HttpClientFactory` from `homarr-core` (trusted certificates; `guarded()` /
   `guarded_get` block private-network SSRF targets for user-supplied URLs). Do not build ad-hoc `reqwest` clients.
+- Live widget refresh: `homarr.js` polls `GET /boards/{name}/items/{id}/card` and morphs it in with Idiomorph (vendored in
+  `assets/static/vendor/`). New widget kinds must declare their `refresh_interval` in `homarr-widgets`.
 - Secrets (integration credentials) are stored encrypted via `homarr-common` encryption; never log or return them.
 
 ## Tests and docs

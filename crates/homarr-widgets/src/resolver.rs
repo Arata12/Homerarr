@@ -537,6 +537,16 @@ fn cache_ttl(kind: WidgetKind) -> Option<Duration> {
     }
 }
 
+/// Minimum client refresh period, so short-TTL kinds do not make browsers hammer integrations.
+const MIN_REFRESH: Duration = Duration::from_secs(30);
+
+/// How often the browser re-fetches a widget card; `None` = never morph it (local or
+/// interactive kinds that hold client state). Other kinds follow their cache TTL, floored at 30 s.
+/// New widget kinds must be classified here (and in `cache_ttl`).
+pub fn refresh_interval(kind: WidgetKind) -> Option<Duration> {
+    cache_ttl(kind).map(|ttl| ttl.max(MIN_REFRESH))
+}
+
 /// Resolver output never depends on the caller (custom widgets run with a `None` user), so no user in the key.
 fn cache_key(kind: WidgetKind, options: &Value, integration_ids: &[String]) -> String {
     format!(
@@ -646,6 +656,20 @@ fn parse_host_port(raw: &str, default_port: u16) -> (String, u16) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn refresh_interval_follows_ttl_with_floor() {
+        assert_eq!(refresh_interval(WidgetKind::Timer), None);
+        assert_eq!(refresh_interval(WidgetKind::Notebook), None);
+        assert_eq!(
+            refresh_interval(WidgetKind::DnsHoleSummary),
+            Some(Duration::from_secs(30))
+        );
+        assert_eq!(
+            refresh_interval(WidgetKind::Weather),
+            Some(Duration::from_secs(300))
+        );
+    }
 
     #[test]
     fn cache_keys_ttls_and_stale_while_revalidate() {
