@@ -332,7 +332,7 @@ pub async fn search_engines_page(
                             tr {
                                 td {
                                     div.table-name-cell {
-                                        img.table-app-icon src=(safe_url(&se.icon_url)) alt="" loading="lazy" onerror="this.onerror=null;this.src='/logo/homarr.svg'";
+                                        img.table-app-icon src=(safe_url(&se.icon_url)) alt="" loading="lazy" data-fallback-src="/logo/homarr.svg";
                                         span { strong { (se.name) } }
                                     }
                                 }

@@ -388,7 +388,7 @@ fn board_switcher(ctx: &PageContext<'_>) -> Markup {
         .unwrap_or("Boards");
     html! {
         div.dropdown {
-            button.board-switcher-btn type="button" onclick="window.toggleDropdown(this)" aria-expanded="false" aria-label="Switch Board" {
+            button.board-switcher-btn type="button" data-action="toggle-dropdown" aria-expanded="false" aria-label="Switch Board" {
                 (icon(icons::LAYOUT_DASHBOARD))
                 span.board-switcher-label { (active_label) }
                 (icon(icons::CHEVRON_DOWN))
@@ -416,7 +416,7 @@ fn user_menu(ctx: &PageContext<'_>, sess: &AuthSession) -> Markup {
     let initial = name.chars().next().unwrap_or('U').to_ascii_uppercase();
     html! {
         div.dropdown {
-            button.user-trigger type="button" onclick="window.toggleDropdown(this)" aria-expanded="false" aria-label="User menu" {
+            button.user-trigger type="button" data-action="toggle-dropdown" aria-expanded="false" aria-label="User menu" {
                 span.avatar-circle { (initial) }
                 span.user-trigger-name { (name) }
                 (icon(icons::CHEVRON_DOWN))
@@ -438,7 +438,7 @@ fn user_menu(ctx: &PageContext<'_>, sess: &AuthSession) -> Markup {
                     div.dropdown-item.dropdown-item-static {
                         (icon(icons::GLOBE))
                         span style="flex:1" { "Language" }
-                        select.locale-select aria-label="Language" onchange="window.setLocaleCookie(this.value)" { (locale_options(ctx)) }
+                        select.locale-select aria-label="Language" data-action="set-locale" { (locale_options(ctx)) }
                     }
                 }
                 div.dropdown-divider {}
@@ -466,7 +466,7 @@ fn header(ctx: &PageContext<'_>, brand_name: &str, logo_src: &str) -> Markup {
                     @if !ctx.boards.is_empty() { (board_switcher(ctx)) }
                 }
                 div.header-zone.header-zone-center {
-                    button.spotlight-trigger type="button" onclick="window.openSpotlight()" aria-label="Search boards and apps" {
+                    button.spotlight-trigger type="button" data-action="open-spotlight" aria-label="Search boards and apps" {
                         span.spotlight-trigger-inner {
                             (icon(icons::SEARCH))
                             span.spotlight-placeholder { "Search boards, apps, or web..." }
@@ -476,12 +476,12 @@ fn header(ctx: &PageContext<'_>, brand_name: &str, logo_src: &str) -> Markup {
                 }
                 div.header-zone.header-zone-right {
                     @if board_tools {
-                        button #edit-mode-btn .icon-btn type="button" onclick="window.toggleEditMode()" title="Edit Board" aria-label="Edit Board" { (icon(icons::PENCIL)) }
+                        button #edit-mode-btn .icon-btn type="button" data-action="toggle-edit-mode" title="Edit Board" aria-label="Edit Board" { (icon(icons::PENCIL)) }
                         @if let Some(active) = ctx.active_board_name {
                             a.icon-btn href={ "/boards/" (urlencoding(active)) "/settings" } title="Board Settings" aria-label="Board Settings" { (icon(icons::SETTINGS)) }
                         }
                     }
-                    button.icon-btn type="button" onclick="window.toggleTheme()" title="Toggle color scheme" aria-label="Toggle color scheme" { (icon(icons::SUN_MOON)) }
+                    button.icon-btn type="button" data-action="toggle-theme" title="Toggle color scheme" aria-label="Toggle color scheme" { (icon(icons::SUN_MOON)) }
                     @if ctx.session.is_some_and(AuthSession::is_admin) {
                         a.icon-btn href="/manage" title="Manage Homarr" aria-label="Manage Homarr" { (icon(icons::SHIELD)) }
                     }
@@ -491,7 +491,7 @@ fn header(ctx: &PageContext<'_>, brand_name: &str, logo_src: &str) -> Markup {
                         @if !ctx.i18n.codes().is_empty() {
                             div.locale-chip title="Language" {
                                 (icon(icons::GLOBE))
-                                select.locale-select aria-label="Language" onchange="window.setLocaleCookie(this.value)" { (locale_options(ctx)) }
+                                select.locale-select aria-label="Language" data-action="set-locale" { (locale_options(ctx)) }
                             }
                         }
                         a.btn.btn-primary.btn-sm href="/auth/login" { "Sign In" }
@@ -504,12 +504,12 @@ fn header(ctx: &PageContext<'_>, brand_name: &str, logo_src: &str) -> Markup {
 
 fn spotlight_modal() -> Markup {
     html! {
-        div #spotlight-modal .modal-backdrop onclick="if(event.target===this)window.closeSpotlight()" {
+        div #spotlight-modal .modal-backdrop data-action="close-spotlight-backdrop" {
             div.modal-card.spotlight-card {
                 div.spotlight-input-row {
                     (icon(icons::SEARCH))
                     input #spotlight-input type="search" placeholder="Search boards, apps, pages, or actions..." autocomplete="off";
-                    button.icon-btn.icon-btn-sm type="button" onclick="window.closeSpotlight()" aria-label="Close search" { (icon(icons::X)) }
+                    button.icon-btn.icon-btn-sm type="button" data-action="close-spotlight" aria-label="Close search" { (icon(icons::X)) }
                 }
                 div.spotlight-tabs role="tablist" aria-label="Filter results" {
                     button.spotlight-tab.is-active type="button" data-spotlight-cat="all" { "All" }

@@ -17,7 +17,7 @@ use serde_json::json;
 use super::manage_extra::integration_defs_map_json;
 pub use super::manage_extra::{api_reference_page, search_engines_page, settings_page};
 use crate::icons::{self, icon};
-use crate::layout::script_json;
+use crate::layout::json_script;
 use crate::layout::{build_spotlight_items, render_page, PageContext, ServerUiSettings};
 use crate::WebState;
 
@@ -105,15 +105,15 @@ pub(super) async fn render_manage_shell(
 
     let full_body = html! {
         div.manage-mobile-bar {
-            button.btn.btn-sm type="button" onclick="window.toggleManageDrawer()" { (icon(icons::MENU)) span { "Menu" } }
+            button.btn.btn-sm type="button" data-action="toggle-manage-drawer" { (icon(icons::MENU)) span { "Menu" } }
             span.muted style="font-size:.84rem" { (title) }
         }
-        div.manage-drawer-backdrop onclick="window.closeManageDrawer()" {}
+        div.manage-drawer-backdrop data-action="close-manage-drawer" {}
         div.manage-shell {
             aside.sidebar #manage-sidebar {
                 div.sidebar-mobile-head {
                     strong { "Navigation" }
-                    button.icon-btn.icon-btn-sm type="button" onclick="window.closeManageDrawer()" aria-label="Close menu" { (icon(icons::X)) }
+                    button.icon-btn.icon-btn-sm type="button" data-action="close-manage-drawer" aria-label="Close menu" { (icon(icons::X)) }
                 }
                 nav.sidebar-nav {
                     @for group in NAV_GROUPS {
@@ -381,7 +381,7 @@ fn app_row(a: &AppRecord) -> Markup {
         tr {
             td {
                 div.table-name-cell {
-                    img.table-app-icon src=(safe_url(&a.icon_url)) alt="" loading="lazy" onerror="this.onerror=null;this.src='/logo/homarr.svg'";
+                    img.table-app-icon src=(safe_url(&a.icon_url)) alt="" loading="lazy" data-fallback-src="/logo/homarr.svg";
                     div {
                         strong { (a.name) }
                         div.muted style="font-size:.76rem" { (a.description.as_deref().unwrap_or("")) }
@@ -480,7 +480,6 @@ pub async fn integrations_page(
             }
         }
     };
-    let defs_json = script_json(&integration_defs_map_json());
     let content = html! {
         div.page-header { h1.page-title { "Integrations" } }
         div.card {
@@ -517,8 +516,7 @@ pub async fn integrations_page(
                 }
             }
         }
-        // safe: script_json escapes <, >, & and line separators, so the JSON cannot close the script tag.
-        script { (PreEscaped(format!("window.__HOMARR_INTEGRATION_DEFS__ = {defs_json};"))) }
+        (json_script("homarr-integration-defs", &integration_defs_map_json()))
     };
     render_manage_shell(
         &web,
@@ -765,7 +763,7 @@ pub async fn docker_page(
     let content = html! {
         div.page-header {
             h1.page-title { "Docker Containers" }
-            button.btn.btn-sm type="button" onclick="location.reload()" { "Refresh" }
+            button.btn.btn-sm type="button" data-action="reload" { "Refresh" }
         }
         @if containers.is_empty() {
             div.card.notice-warn {
@@ -877,7 +875,7 @@ pub async fn tasks_page(
     let content = html! {
         div.page-header {
             h1.page-title { "Background Cron Tasks" }
-            button.btn.btn-sm type="button" onclick="location.reload()" { "Refresh" }
+            button.btn.btn-sm type="button" data-action="reload" { "Refresh" }
         }
         div.card.table-wrap {
             table {
@@ -918,7 +916,7 @@ pub async fn logs_page(
                     option value="error" { "Error" }
                 }
                 input #log-text-filter type="search" placeholder="Search logs..." style="width:220px" aria-label="Search logs";
-                button.btn.btn-sm type="button" onclick="location.reload()" { "Refresh" }
+                button.btn.btn-sm type="button" data-action="reload" { "Refresh" }
             }
         }
         div.log-terminal #log-terminal {
@@ -1031,7 +1029,7 @@ pub async fn api_keys_page(
             div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap" {
                 code #api-key-value style="padding:8px 12px;font-size:.92rem;user-select:all" {}
                 button #copy-api-key-btn .btn.btn-sm.btn-primary type="button" { (icon(icons::COPY)) span { "Copy Key" } }
-                button.btn.btn-sm type="button" onclick="location.reload()" { "Done & Refresh" }
+                button.btn.btn-sm type="button" data-action="reload" { "Done & Refresh" }
             }
         }
         div.card {

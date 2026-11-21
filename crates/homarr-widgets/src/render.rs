@@ -397,7 +397,7 @@ fn render_app(options: &Value, data: &Value) -> Markup {
 
     html! {
         a.app-tile href=(href) target="_blank" rel="noopener noreferrer" data-ping-url=(ping_url) data-app-id=(app_id) title=(title_attr) {
-            img.app-icon src=(icon) alt=(name) loading="lazy" onerror="this.onerror=null;this.src='/logo/homarr.svg'";
+            img.app-icon src=(icon) alt=(name) loading="lazy" data-fallback-src="/logo/homarr.svg";
             @if show_title {
                 div.app-name { (name) }
             }
@@ -429,7 +429,7 @@ fn render_bookmarks(options: &Value) -> Markup {
                     .filter(|u| *u != "#");
                 a.bookmark-chip href=(href) target="_blank" rel="noopener noreferrer" {
                     @if let Some(url) = icon_url {
-                        img.bookmark-chip-icon src=(url) alt="" loading="lazy" onerror="this.style.display='none'";
+                        img.bookmark-chip-icon src=(url) alt="" loading="lazy" data-hide-on-error;
                     } @else {
                         // safe: static SVG const.
                         (PreEscaped(r#"<svg class="ui-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 15l6 -6" /><path d="M11 6l.463 -.536a5 5 0 0 1 7.071 7.072l-.534 .464" /><path d="M13 18l-.397 .534a5.068 5.068 0 0 1 -7.127 0a4.972 4.972 0 0 1 0 -7.071l.524 -.463" /></svg>"#))
@@ -902,8 +902,8 @@ fn render_timer(options: &Value) -> Markup {
             div.metric-sub { (title) }
             div.metric-big.js-timer-display { (format!("{:02}:{:02}", secs / 60, secs % 60)) }
             div.timer-controls {
-                button.btn.btn-sm type="button" onclick="window.toggleTimer(this)" { "Start" }
-                button.btn.btn-sm type="button" onclick="window.resetTimer(this)" { "Reset" }
+                button.btn.btn-sm type="button" data-action="toggle-timer" { "Start" }
+                button.btn.btn-sm type="button" data-action="reset-timer" { "Reset" }
             }
         }
     }

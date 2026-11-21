@@ -536,9 +536,11 @@
   const intKindSelect = document.getElementById("integration-kind-select");
   const intSecretContainer = document.getElementById("integration-secret-fields");
   const intUrlInput = document.getElementById("integration-url-input");
-  if (intKindSelect && intSecretContainer && window.__HOMARR_INTEGRATION_DEFS__) {
+  const intDefsEl = document.getElementById("homarr-integration-defs");
+  if (intKindSelect && intSecretContainer && intDefsEl) {
+    const intDefs = JSON.parse(intDefsEl.textContent);
     const renderIntFields = () => {
-      const def = window.__HOMARR_INTEGRATION_DEFS__[intKindSelect.value];
+      const def = intDefs[intKindSelect.value];
       intSecretContainer.innerHTML = "";
       if (!def) return;
       if (intUrlInput && def.defaultUrl) {
@@ -829,6 +831,76 @@
       if (btn.getAttribute("data-reload") !== "false") location.reload();
     } else {
       toast((data.error && data.error.message) || "Action failed", "error");
+    }
+  });
+
+  // Declarative UI actions ([data-action]); replaces inline on* handlers so the CSP can forbid inline script.
+  const ACTIONS = {
+    click: {
+      "toggle-theme": () => window.toggleTheme(),
+      "toggle-dropdown": (el) => window.toggleDropdown(el),
+      "open-spotlight": () => openSpotlight(),
+      "close-spotlight": () => closeSpotlight(),
+      "close-spotlight-backdrop": (el, e) => {
+        if (e.target === el) closeSpotlight();
+      },
+      "toggle-edit-mode": () => {
+        if (window.toggleEditMode) window.toggleEditMode();
+      },
+      "fill-demo-login": () => window.fillDemoLogin(),
+      "toggle-manage-drawer": () => window.toggleManageDrawer(),
+      "close-manage-drawer": () => window.closeManageDrawer(),
+      reload: () => location.reload(),
+      "toggle-category": (el) => window.toggleCategory(el),
+      "open-container-apps": (el) => window.openContainerApps(el),
+      "toggle-timer": (el) => window.toggleTimer(el),
+      "reset-timer": (el) => window.resetTimer(el),
+      "fill-input": (el) => {
+        const input = document.getElementById(el.getAttribute("data-target"));
+        if (input) input.value = el.getAttribute("data-value") || "";
+      },
+    },
+    change: {
+      "set-locale": (el) => window.setLocaleCookie(el.value),
+    },
+    input: {
+      "show-percent": (el) => {
+        const out = document.getElementById(el.getAttribute("data-target"));
+        if (out) out.textContent = el.value + "%";
+      },
+    },
+  };
+  Object.keys(ACTIONS).forEach((type) => {
+    document.addEventListener(type, function (e) {
+      const el = e.target instanceof Element ? e.target.closest("[data-action]") : null;
+      if (!el) return;
+      const fn = ACTIONS[type][el.getAttribute("data-action")];
+      if (fn) fn(el, e);
+    });
+  });
+
+  // Image fallbacks ([data-fallback-src] swaps the source once, [data-hide-on-error] hides).
+  // `error` does not bubble, so listen in the capture phase; also catch images that failed before this ran.
+  function imageFailed(img) {
+    const fallback = img.getAttribute("data-fallback-src");
+    if (fallback !== null) {
+      img.removeAttribute("data-fallback-src");
+      img.src = fallback;
+    } else if (img.hasAttribute("data-hide-on-error")) {
+      img.style.display = "none";
+    }
+  }
+  document.addEventListener(
+    "error",
+    function (e) {
+      if (e.target instanceof HTMLImageElement) imageFailed(e.target);
+    },
+    true
+  );
+  document.querySelectorAll("img[data-fallback-src], img[data-hide-on-error]").forEach((img) => {
+    // decode() rejects only for broken images (size-less SVGs also report naturalWidth 0).
+    if (img.complete && img.naturalWidth === 0 && img.getAttribute("src")) {
+      img.decode().catch(() => imageFailed(img));
     }
   });
 

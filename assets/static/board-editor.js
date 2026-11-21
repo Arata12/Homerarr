@@ -1,14 +1,15 @@
 /*
  * Homarr board editor (loaded only for users who may modify the board).
  *
- * Data model: window.__HOMARR_EDITOR__ (see crates/homarr-web/src/pages/board_editor.rs).
+ * Data model: JSON in <script id="homarr-editor-data"> (see crates/homarr-web/src/pages/board_editor.rs).
  * Persistence: PUT /api/boards/{id}/layout (sections + items), PUT /api/boards/{id}/layouts.
  * Positions are stored per responsive layout; item.p[layoutId] = [x, y, w, h, real].
  */
 (function () {
   "use strict";
-  const E = window.__HOMARR_EDITOR__;
-  if (!E) return;
+  const dataEl = document.getElementById("homarr-editor-data");
+  if (!dataEl) return;
+  const E = JSON.parse(dataEl.textContent);
 
   const ROW_FALLBACK = 108;
   const MAX_H = 32;

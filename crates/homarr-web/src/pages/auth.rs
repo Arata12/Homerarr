@@ -16,7 +16,7 @@ fn auth_shell(heading: &str, subtitle: &str, inner: Markup) -> Markup {
         div.auth-shell {
             div.auth-floating-bar {
                 a.icon-btn href="/" title="Back to Home Board" aria-label="Back to Home Board" { (icon(icons::HOME)) }
-                button.icon-btn type="button" onclick="window.toggleTheme()" title="Toggle theme" aria-label="Toggle theme" { (icon(icons::SUN_MOON)) }
+                button.icon-btn type="button" data-action="toggle-theme" title="Toggle theme" aria-label="Toggle theme" { (icon(icons::SUN_MOON)) }
             }
             div.auth-card {
                 div.auth-brand {
@@ -54,7 +54,7 @@ pub async fn login_page(
                         "Username: " code { "demo" } " · Password: " code { "demo" }
                     }
                 }
-                button.btn.btn-sm type="button" onclick="window.fillDemoLogin()" { "Fill" }
+                button.btn.btn-sm type="button" data-action="fill-demo-login" { "Fill" }
             }
         }
         form #login-form .form-grid style="max-width:none" data-api-form="/api/auth/login" data-redirect="/" {

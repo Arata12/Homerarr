@@ -3,7 +3,13 @@ pub mod icons;
 pub mod layout;
 pub mod pages;
 
-use axum::{routing::get, Router};
+use axum::{
+    http::{header, HeaderValue},
+    middleware::map_response,
+    response::Response,
+    routing::get,
+    Router,
+};
 use homarr_api::AppState;
 use homarr_auth::AuthContextProvider;
 use homarr_core::AppConfig;
@@ -26,6 +32,18 @@ impl AuthContextProvider for WebState {
     fn config(&self) -> &AppConfig {
         &self.app.config
     }
+}
+
+/// CSP for every server-rendered page. Scripts only from `/static`; styles stay inline-friendly
+/// (style attributes, board/custom CSS); images, media and frames may come from any host because
+/// widgets embed user-configured URLs.
+pub const UI_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self';     style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:;     font-src 'self' data: https:; media-src 'self' blob: https: http:; connect-src 'self' ws: wss:;     frame-src 'self' https: http:; object-src 'none'; base-uri 'self'; form-action 'self';     frame-ancestors 'self'";
+
+async fn set_csp(mut res: Response) -> Response {
+    res.headers_mut()
+        .entry(header::CONTENT_SECURITY_POLICY)
+        .or_insert(HeaderValue::from_static(UI_CONTENT_SECURITY_POLICY));
+    res
 }
 
 pub fn web_router(state: AppState) -> Router {
@@ -62,6 +80,7 @@ pub fn web_router(state: AppState) -> Router {
         .route("/manage/about", get(manage::about_page))
         .route("/reference/api", get(manage::api_reference_page))
         .route("/widgets/{kind}", get(manage::widget_preview_page))
+        .layer(map_response(set_csp))
         .with_state(web_state)
 }
 
@@ -137,6 +156,15 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(resp.status(), StatusCode::OK, "path {path} failed");
+            let csp = resp.headers()[header::CONTENT_SECURITY_POLICY]
+                .to_str()
+                .unwrap()
+                .to_string();
+            let script_src = csp
+                .split(';')
+                .find(|d| d.trim().starts_with("script-src"))
+                .unwrap();
+            assert!(!script_src.contains("unsafe"), "path {path}: {csp}");
             let html = String::from_utf8(
                 to_bytes(resp.into_body(), usize::MAX)
                     .await
@@ -145,6 +173,20 @@ mod tests {
             )
             .unwrap();
             assert!(html.contains("Homarr"), "path {path} missing Homarr markup");
+            // The CSP forbids inline script: only external or JSON-data <script> tags allowed.
+            assert!(
+                !html.contains(" onclick=")
+                    && !html.contains(" onerror=")
+                    && !html.contains(" onchange="),
+                "path {path} has an inline handler"
+            );
+            for tag in html.split("<script").skip(1) {
+                let open = &tag[..tag.find('>').unwrap()];
+                assert!(
+                    open.contains(" src=") || open.contains(r#"type="application/json""#),
+                    "path {path} has an inline <script{open}>"
+                );
+            }
         }
     }
 }

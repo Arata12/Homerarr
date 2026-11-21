@@ -22,7 +22,7 @@ use super::board_editor::{
 };
 use crate::icons::{self, icon};
 use crate::layout::{
-    build_spotlight_items, render_page, script_json, urlencoding, PageContext, ServerUiSettings,
+    build_spotlight_items, json_script, render_page, urlencoding, PageContext, ServerUiSettings,
 };
 use crate::WebState;
 
@@ -228,7 +228,7 @@ pub async fn board_settings_page(
                     label { "Background Image URL" }
                     div style="display:flex;gap:8px" {
                         input #bg-url-input name="backgroundImageUrl" value=(b.background_image_url.as_deref().unwrap_or("")) placeholder="/images/demo-dashboard-background.svg";
-                        button.btn.btn-sm type="button" style="white-space:nowrap" onclick="document.getElementById('bg-url-input').value='/images/demo-dashboard-background.svg'" { "Use Demo BG" }
+                        button.btn.btn-sm type="button" style="white-space:nowrap" data-action="fill-input" data-target="bg-url-input" data-value="/images/demo-dashboard-background.svg" { "Use Demo BG" }
                     }
                 }
                 div.form-row { label { "Meta Title" } input name="metaTitle" value=(b.meta_title.as_deref().unwrap_or("")); }
@@ -243,7 +243,7 @@ pub async fn board_settings_page(
                 }
                 div.form-row {
                     label { "Card Opacity (" span #opacity-val { (opacity) "%" } ")" }
-                    input type="range" name="opacity" min="10" max="100" value=(opacity) oninput="document.getElementById('opacity-val').textContent=this.value+'%'";
+                    input type="range" name="opacity" min="10" max="100" value=(opacity) data-action="show-percent" data-target="opacity-val";
                 }
                 div.form-row {
                     label { "Card Border Radius" }
@@ -478,12 +478,12 @@ impl<'a> ContainerRenderer<'a> {
                 @if collapsible || has_label || show_open_all {
                     div.board-container-bar {
                         @if collapsible && show_label {
-                            button.board-container-header type="button" data-container-toggle onclick="window.toggleCategory(this)" aria-expanded=(expanded) aria-controls=(controls) title=(label) {
+                            button.board-container-header type="button" data-container-toggle data-action="toggle-category" aria-expanded=(expanded) aria-controls=(controls) title=(label) {
                                 span.board-container-title { (label) }
                                 span.category-chevron { (icon(icons::CHEVRON_DOWN)) }
                             }
                         } @else if collapsible {
-                            button.board-container-toggle type="button" data-container-toggle onclick="window.toggleCategory(this)" aria-expanded=(expanded) aria-controls=(controls) aria-label=(label) title=(label) {
+                            button.board-container-toggle type="button" data-container-toggle data-action="toggle-category" aria-expanded=(expanded) aria-controls=(controls) aria-label=(label) title=(label) {
                                 span.category-chevron { (icon(icons::CHEVRON_DOWN)) }
                             }
                         } @else if has_label {
@@ -491,7 +491,7 @@ impl<'a> ContainerRenderer<'a> {
                         }
                         @if show_open_all {
                             @let name = self.open_all_label.replace("{name}", label);
-                            button.icon-btn.icon-btn-sm.board-container-open-all type="button" onclick="window.openContainerApps(this)" title=(name) aria-label=(name) { (icon(icons::EXTERNAL_LINK)) }
+                            button.icon-btn.icon-btn-sm.board-container-open-all type="button" data-action="open-container-apps" title=(name) aria-label=(name) { (icon(icons::EXTERNAL_LINK)) }
                         }
                     }
                 }
@@ -702,7 +702,7 @@ async fn render_full_board(
             @if sec.kind == "category" {
                 section.board-section.category-section data-section-id=(sid) data-collapsed="false" {
                     (section_edit_bar)
-                    button.category-header type="button" onclick="window.toggleCategory(this)" aria-expanded="true" {
+                    button.category-header type="button" data-action="toggle-category" aria-expanded="true" {
                         span.category-title-wrap {
                             span.category-chevron { (icon(icons::CHEVRON_DOWN)) }
                             span.category-title { (sec_label) }
@@ -741,13 +741,11 @@ async fn render_full_board(
             integrations,
             editor_strings.clone(),
         );
-        let editor_js = format!("window.__HOMARR_EDITOR__ = {};", script_json(&blob));
         (
             edit_bar(&full.board.name, &editor_strings),
             html! {
                 div #editor-modal-root {}
-                // safe: script_json escapes `<`, `>` and `&`, so the data cannot close the tag
-                script { (PreEscaped(editor_js)) }
+                (json_script("homarr-editor-data", &blob))
             },
         )
     } else {

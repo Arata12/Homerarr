@@ -545,7 +545,7 @@ pub async fn app_list(db: &Database) -> Vec<Value> {
         .collect()
 }
 
-/// Everything the browser editor needs, as JSON for `window.__HOMARR_EDITOR__`.
+/// Everything the browser editor needs, embedded as JSON in `#homarr-editor-data`.
 #[allow(clippy::too_many_arguments)]
 pub fn editor_blob(
     full: &FullBoard,
