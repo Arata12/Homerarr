@@ -1322,7 +1322,10 @@ dependencies = [
  "homarr-db",
  "homarr-redis",
  "homarr-web",
+ "hyper",
+ "hyper-util",
  "tokio",
+ "tower",
  "tower-http",
  "tracing",
 ]

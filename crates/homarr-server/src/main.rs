@@ -1,3 +1,4 @@
+use std::net::SocketAddr;
 use std::path::Path;
 use std::time::Duration;
 
@@ -11,7 +12,14 @@ use homarr_db::{
 };
 use homarr_redis::RedisStore;
 use homarr_web::web_router;
+use hyper::server::conn::http1;
+use hyper_util::{
+    rt::{TokioIo, TokioTimer},
+    server::graceful::GracefulShutdown,
+    service::TowerToHyperService,
+};
 use tokio::net::TcpListener;
+use tower::Service;
 use tower_http::{
     compression::CompressionLayer,
     services::{ServeDir, ServeFile},
@@ -96,6 +104,63 @@ async fn shutdown_signal() {
     }
 }
 
+/// Cuts connections that do not finish sending request headers in time (slowloris).
+const HEADER_READ_TIMEOUT: Duration = Duration::from_secs(30);
+/// How long in-flight connections get to finish after a shutdown signal.
+const SHUTDOWN_GRACE: Duration = Duration::from_secs(30);
+
+/// Accept loop equivalent to `axum::serve` (HTTP/1, ConnectInfo, WebSocket upgrades, graceful
+/// shutdown) plus hyper's header read timeout, which `axum::serve` does not expose.
+async fn serve(listener: TcpListener, app: Router) {
+    let mut make_service = app.into_make_service_with_connect_info::<SocketAddr>();
+    let mut builder = http1::Builder::new();
+    builder
+        .timer(TokioTimer::new())
+        .header_read_timeout(HEADER_READ_TIMEOUT);
+    let graceful = GracefulShutdown::new();
+    let shutdown = shutdown_signal();
+    tokio::pin!(shutdown);
+
+    loop {
+        let (stream, remote_addr) = tokio::select! {
+            res = listener.accept() => match res {
+                Ok(conn) => conn,
+                Err(err) => {
+                    // Usually EMFILE/ENFILE: back off instead of spinning.
+                    tracing::warn!(error = %err, "Failed to accept connection");
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    continue;
+                }
+            },
+            _ = &mut shutdown => break,
+        };
+        let tower_service = match make_service.call(remote_addr).await {
+            Ok(svc) => svc,
+            Err(never) => match never {},
+        };
+        let conn = builder
+            .serve_connection(
+                TokioIo::new(stream),
+                TowerToHyperService::new(tower_service),
+            )
+            .with_upgrades();
+        let conn = graceful.watch(conn);
+        tokio::spawn(async move {
+            if let Err(err) = conn.await {
+                tracing::debug!(error = %err, "Connection closed with error");
+            }
+        });
+    }
+
+    drop(listener);
+    if tokio::time::timeout(SHUTDOWN_GRACE, graceful.shutdown())
+        .await
+        .is_err()
+    {
+        tracing::warn!("Timed out waiting for connections to close");
+    }
+}
+
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let config = AppConfig::from_env()?;
@@ -150,12 +215,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let listener = TcpListener::bind(&addr).await?;
     tracing::info!(listen_addr = %addr, "Homarr listening");
 
-    axum::serve(
-        listener,
-        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
-    )
-    .with_graceful_shutdown(shutdown_signal())
-    .await?;
+    serve(listener, app).await;
 
     state.scheduler.shutdown().await;
     tracing::info!("Homarr shutdown complete");
