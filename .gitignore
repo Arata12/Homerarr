@@ -1,0 +1,31 @@
+# Rust build artifacts
+target/
+.ci-cache/
+**/*.rs.bk
+
+# Databases & local appdata
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.db
+appdata/
+
+# Certificates & secrets
+*.pem
+*.crt
+.env
+.env.*
+!.env.example
+static-data/secrets/
+
+# Editor & OS metadata
+.DS_Store
+.idea/
+*.log
+
+# Personal agent config
+.opencode
+.agents/*
+!.agents/skills/
+!.agents/plugins/
+skills-lock.json
