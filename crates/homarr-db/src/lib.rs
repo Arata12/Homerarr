@@ -83,7 +83,13 @@ mod tests {
         let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations/sqlite");
         std::fs::read_dir(dir)
             .unwrap()
-            .filter(|e| e.as_ref().unwrap().path().extension().is_some_and(|x| x == "sql"))
+            .filter(|e| {
+                e.as_ref()
+                    .unwrap()
+                    .path()
+                    .extension()
+                    .is_some_and(|x| x == "sql")
+            })
             .count()
     }
 

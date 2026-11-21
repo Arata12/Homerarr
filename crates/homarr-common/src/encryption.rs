@@ -23,7 +23,11 @@ pub fn encrypt_authenticated(key: &[u8; 32], plaintext: &str) -> HomarrResult<St
     let ciphertext = Aes256Gcm::new(key.into())
         .encrypt(Nonce::from_slice(&nonce), plaintext.as_bytes())
         .map_err(|_| HomarrError::Internal("Encryption failed".to_string()))?;
-    Ok(format!("{V2_PREFIX}{}.{}", hex::encode(ciphertext), hex::encode(nonce)))
+    Ok(format!(
+        "{V2_PREFIX}{}.{}",
+        hex::encode(ciphertext),
+        hex::encode(nonce)
+    ))
 }
 
 /// Decrypts a `v2:` value from [`encrypt_authenticated`]; fails on any tampering or a wrong key.
@@ -194,7 +198,11 @@ mod tests {
     fn rejects_tampered_or_foreign_v2_secret() {
         let crypto = SecretCrypto::zero_for_test();
         let encrypted = crypto.encrypt_secret("secret").unwrap();
-        let (ct, nonce) = encrypted.strip_prefix("v2:").unwrap().split_once('.').unwrap();
+        let (ct, nonce) = encrypted
+            .strip_prefix("v2:")
+            .unwrap()
+            .split_once('.')
+            .unwrap();
         let mut bytes = hex::decode(ct).unwrap();
         bytes[0] ^= 1;
         let tampered = format!("v2:{}.{nonce}", hex::encode(bytes));
