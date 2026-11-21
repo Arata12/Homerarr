@@ -1,9 +1,14 @@
-use std::time::Duration;
+use std::{
+    collections::HashMap,
+    net::{IpAddr, SocketAddr},
+    sync::{Arc, Mutex},
+    time::Duration,
+};
 
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        Request, State,
+        ConnectInfo, Extension, Request, State,
     },
     http::{
         header::{COOKIE, ORIGIN},
@@ -24,6 +29,84 @@ use crate::{
     state::AppState,
 };
 
+/// Maximum concurrent WebSocket connections across all clients.
+pub const WS_MAX_CONNECTIONS: usize = 1024;
+/// Maximum concurrent WebSocket connections per peer IP.
+pub const WS_MAX_CONNECTIONS_PER_IP: usize = 32;
+/// Clients only send pings, so inbound messages and frames stay tiny.
+const WS_MAX_INBOUND_BYTES: usize = 64 * 1024;
+
+#[derive(Default)]
+struct WsCounts {
+    total: usize,
+    per_ip: HashMap<IpAddr, usize>,
+}
+
+/// Tracks open WebSocket connections globally and per peer IP.
+#[derive(Clone)]
+pub struct WsLimiter {
+    counts: Arc<Mutex<WsCounts>>,
+    max_total: usize,
+    max_per_ip: usize,
+}
+
+impl Default for WsLimiter {
+    fn default() -> Self {
+        Self::new(WS_MAX_CONNECTIONS, WS_MAX_CONNECTIONS_PER_IP)
+    }
+}
+
+impl WsLimiter {
+    pub fn new(max_total: usize, max_per_ip: usize) -> Self {
+        Self {
+            counts: Arc::default(),
+            max_total,
+            max_per_ip,
+        }
+    }
+
+    /// Reserves a slot; it is released when the returned permit is dropped.
+    /// Without a peer address only the global cap applies.
+    pub fn try_acquire(&self, ip: Option<IpAddr>) -> Option<WsPermit> {
+        let mut counts = self.counts.lock().unwrap_or_else(|e| e.into_inner());
+        if counts.total >= self.max_total {
+            return None;
+        }
+        if let Some(ip) = ip {
+            let entry = counts.per_ip.entry(ip).or_insert(0);
+            if *entry >= self.max_per_ip {
+                return None;
+            }
+            *entry += 1;
+        }
+        counts.total += 1;
+        Some(WsPermit {
+            counts: self.counts.clone(),
+            ip,
+        })
+    }
+}
+
+pub struct WsPermit {
+    counts: Arc<Mutex<WsCounts>>,
+    ip: Option<IpAddr>,
+}
+
+impl Drop for WsPermit {
+    fn drop(&mut self) {
+        let mut counts = self.counts.lock().unwrap_or_else(|e| e.into_inner());
+        counts.total = counts.total.saturating_sub(1);
+        if let Some(ip) = self.ip {
+            if let Some(n) = counts.per_ip.get_mut(&ip) {
+                *n = n.saturating_sub(1);
+                if *n == 0 {
+                    counts.per_ip.remove(&ip);
+                }
+            }
+        }
+    }
+}
+
 /// Middleware rejecting WebSocket requests carrying an `ApiKey` header BEFORE upgrade extraction.
 pub async fn reject_api_key_middleware(req: Request, next: Next) -> impl IntoResponse {
     if req.headers().contains_key(API_KEY_HEADER_NAME) {
@@ -39,6 +122,7 @@ pub async fn reject_api_key_middleware(req: Request, next: Next) -> impl IntoRes
 pub async fn ws_handler(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
+    peer: Option<Extension<ConnectInfo<SocketAddr>>>,
     headers: HeaderMap,
 ) -> impl IntoResponse {
     // API keys must NEVER authenticate WebSocket connections (matches Homarr security model).
@@ -88,7 +172,24 @@ pub async fn ws_handler(
         None => None,
     };
 
-    ws.on_upgrade(move |socket| handle_socket(socket, state, session))
+    // Checked after auth/origin so the slot is only held for connections that will upgrade.
+    let Some(permit) = state
+        .ws_limiter
+        .try_acquire(peer.map(|Extension(ConnectInfo(addr))| addr.ip()))
+    else {
+        return (
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many WebSocket connections",
+        )
+            .into_response();
+    };
+
+    ws.max_message_size(WS_MAX_INBOUND_BYTES)
+        .max_frame_size(WS_MAX_INBOUND_BYTES)
+        .on_upgrade(move |socket| async move {
+            let _permit = permit;
+            handle_socket(socket, state, session).await;
+        })
         .into_response()
 }
 
@@ -194,5 +295,27 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, session: Option<A
                 }
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn limiter_enforces_per_ip_and_global_caps_and_releases_on_drop() {
+        let limiter = WsLimiter::new(3, 2);
+        let a: IpAddr = "10.0.0.1".parse().unwrap();
+        let b: IpAddr = "10.0.0.2".parse().unwrap();
+
+        let a1 = limiter.try_acquire(Some(a)).unwrap();
+        let _a2 = limiter.try_acquire(Some(a)).unwrap();
+        assert!(limiter.try_acquire(Some(a)).is_none(), "per-IP cap");
+
+        let _b1 = limiter.try_acquire(Some(b)).unwrap();
+        assert!(limiter.try_acquire(Some(b)).is_none(), "global cap");
+
+        drop(a1);
+        assert!(limiter.try_acquire(Some(a)).is_some(), "slot released");
     }
 }

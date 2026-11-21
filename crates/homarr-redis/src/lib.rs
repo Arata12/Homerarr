@@ -360,6 +360,14 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn in_memory_incr_counts_within_window() {
+        let store = RedisStore::in_memory();
+        assert_eq!(store.incr_ex("c", 60).await.unwrap(), 1);
+        assert_eq!(store.incr_ex("c", 60).await.unwrap(), 2);
+        assert_eq!(store.incr_ex("other", 60).await.unwrap(), 1);
+    }
+
+    #[tokio::test]
     async fn in_memory_redis_sweeps_unread_expired_keys() {
         let mem = MemoryRedis::default();
         for i in 0..SWEEP_EVERY_WRITES {

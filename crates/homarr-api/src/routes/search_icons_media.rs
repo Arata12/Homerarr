@@ -251,7 +251,7 @@ pub async fn upload_media(
     session.require_writable(state.demo_read_only_active())?;
     session.require_permission(GroupPermissionKey::MediaUpload)?;
 
-    if let Some(field) = multipart
+    if let Some(mut field) = multipart
         .next_field()
         .await
         .map_err(|e| HomarrError::BadRequest(format!("Multipart error: {e}")))?
@@ -269,14 +269,19 @@ pub async fn upload_media(
                 "Unsupported media content-type '{content_type}'"
             )));
         }
-        let bytes = field
-            .bytes()
+        // Read in chunks and abort as soon as the cap is exceeded instead of buffering everything.
+        let mut bytes: Vec<u8> = Vec::new();
+        while let Some(chunk) = field
+            .chunk()
             .await
-            .map_err(|e| HomarrError::BadRequest(format!("Read upload failed: {e}")))?;
-        if bytes.len() > MEDIA_UPLOAD_MAX_BYTES {
-            return Err(HomarrError::BadRequest(
-                "Media upload exceeds 32 MiB limit".into(),
-            ));
+            .map_err(|e| HomarrError::BadRequest(format!("Read upload failed: {e}")))?
+        {
+            if bytes.len() + chunk.len() > MEDIA_UPLOAD_MAX_BYTES {
+                return Err(HomarrError::BadRequest(
+                    "Media upload exceeds 32 MiB limit".into(),
+                ));
+            }
+            bytes.extend_from_slice(&chunk);
         }
         if !matches_media_content_type(&bytes, &content_type) {
             return Err(HomarrError::BadRequest(format!(

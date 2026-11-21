@@ -1,4 +1,5 @@
 pub mod csrf;
+pub mod limits;
 pub mod login_throttle;
 pub mod mcp;
 pub mod openapi;
@@ -7,6 +8,7 @@ pub mod state;
 pub mod ws;
 
 use axum::{
+    extract::DefaultBodyLimit,
     routing::{delete, get, patch, post, put},
     Router,
 };
@@ -176,7 +178,9 @@ pub fn api_router(state: AppState) -> Router {
         .route("/api/icons/favicon", get(search_icons_media::fetch_favicon))
         .route(
             "/api/medias",
-            get(search_icons_media::list_medias).post(search_icons_media::upload_media),
+            get(search_icons_media::list_medias)
+                .post(search_icons_media::upload_media)
+                .layer(DefaultBodyLimit::max(limits::MEDIA_UPLOAD_BODY_LIMIT)),
         )
         .route(
             "/api/medias/{id}",
@@ -297,7 +301,11 @@ pub fn api_router(state: AppState) -> Router {
         )
         .route("/api/logs", get(system::recent_logs))
         .route("/api/backup/export", get(system::export_backup))
-        .route("/api/backup/import", post(system::import_backup))
+        .route(
+            "/api/backup/import",
+            post(system::import_backup)
+                .layer(DefaultBodyLimit::max(limits::BACKUP_IMPORT_BODY_LIMIT)),
+        )
         .route(
             "/api/assistant/config",
             get(system::get_assistant_config).put(system::save_assistant_config),
@@ -617,6 +625,102 @@ mod tests {
         assert!(!authenticated(&app, None).await);
         assert!(!authenticated(&app, Some("203.0.113.9:4000")).await);
         assert!(authenticated(&app, Some("10.1.2.3:4000")).await);
+    }
+
+    #[tokio::test]
+    async fn body_limits_default_to_2_mib_with_raised_upload_and_backup_routes() {
+        let (_state, app) = setup_test_state().await;
+        let app = limits::apply(app);
+        let admin = login_cookie(&app, "demo", "demo").await;
+        let big = 3 * 1024 * 1024;
+
+        // Anonymous route: oversized JSON body is rejected before parsing.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post("/api/auth/login")
+                    .header(header::HOST, "localhost")
+                    .header(header::ORIGIN, "http://localhost")
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(format!(r#"{{"name":"{}"}}"#, "a".repeat(big))))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+        // Backup import keeps a larger limit: the body is read (and fails validation), not 413.
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post("/api/backup/import")
+                    .header(header::HOST, "localhost")
+                    .header(header::ORIGIN, "http://localhost")
+                    .header(header::COOKIE, &admin)
+                    .header(header::CONTENT_TYPE, "application/json")
+                    .body(Body::from(format!(r#"{{"x":"{}"}}"#, "a".repeat(big))))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_ne!(resp.status(), StatusCode::PAYLOAD_TOO_LARGE);
+
+        // Media upload accepts a multi-MiB file.
+        let boundary = "XBOUNDARY";
+        let mut body = format!(
+            "--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"a.png\"\r\nContent-Type: image/png\r\n\r\n"
+        )
+        .into_bytes();
+        body.extend_from_slice(&[0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+        body.extend(std::iter::repeat_n(0u8, big));
+        body.extend_from_slice(format!("\r\n--{boundary}--\r\n").as_bytes());
+        let resp = app
+            .clone()
+            .oneshot(
+                Request::post("/api/medias")
+                    .header(header::HOST, "localhost")
+                    .header(header::ORIGIN, "http://localhost")
+                    .header(header::COOKIE, &admin)
+                    .header(
+                        header::CONTENT_TYPE,
+                        format!("multipart/form-data; boundary={boundary}"),
+                    )
+                    .body(Body::from(body))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(resp.status(), StatusCode::CREATED);
+    }
+
+    #[tokio::test]
+    async fn oauth_registration_is_limited_per_ip() {
+        let (_state, app) = setup_test_state().await;
+        let mut last = StatusCode::CREATED;
+        for _ in 0..21 {
+            let mut req = Request::post("/api/mcp/oauth/register")
+                .header(header::HOST, "localhost")
+                .header(header::ORIGIN, "http://localhost")
+                .header(header::CONTENT_TYPE, "application/json")
+                .body(Body::from(
+                    json!({ "redirect_uris": ["http://localhost:9/cb"] }).to_string(),
+                ))
+                .unwrap();
+            req.extensions_mut()
+                .insert(axum::extract::ConnectInfo::<std::net::SocketAddr>(
+                    "203.0.113.5:1234".parse().unwrap(),
+                ));
+            let resp = app.clone().oneshot(req).await.unwrap();
+            if last == StatusCode::CREATED {
+                // Every call before the 21st must succeed.
+                assert!(matches!(
+                    resp.status(),
+                    StatusCode::CREATED | StatusCode::TOO_MANY_REQUESTS
+                ));
+            }
+            last = resp.status();
+        }
+        assert_eq!(last, StatusCode::TOO_MANY_REQUESTS);
     }
 
     async fn login_cookie(app: &Router, name: &str, password: &str) -> String {

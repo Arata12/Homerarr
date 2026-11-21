@@ -1,8 +1,8 @@
 use std::path::Path;
 use std::time::Duration;
 
-use axum::{extract::DefaultBodyLimit, Router};
-use homarr_api::{api_router, AppState};
+use axum::Router;
+use homarr_api::{api_router, limits, AppState};
 use homarr_common::SecretCrypto;
 use homarr_core::{init_logging, AppConfig, CertificateManager, DatabaseDriver, HttpClientFactory};
 use homarr_db::{
@@ -141,9 +141,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             "/logo.png",
             ServeFile::new(assets.join("public/logo/logo.png")),
         )
-        .route_service("/sw.js", ServeFile::new(assets.join("public/sw.js")))
-        .layer(DefaultBodyLimit::max(256 * 1024 * 1024))
-        .layer(CompressionLayer::new().gzip(true));
+        .route_service("/sw.js", ServeFile::new(assets.join("public/sw.js")));
+    // 2 MiB default body limit (per-route overrides live in the API router), response
+    // timeouts and request body read timeout.
+    let app = limits::apply(app).layer(CompressionLayer::new().gzip(true));
 
     let addr = format!("{}:{}", config.host, config.port);
     let listener = TcpListener::bind(&addr).await?;
