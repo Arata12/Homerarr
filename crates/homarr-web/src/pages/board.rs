@@ -13,16 +13,16 @@ use homarr_db::{
 };
 use homarr_definitions::{BoardPermission, WidgetKind};
 use homarr_widgets::render_widget_html_with_origin;
-use html_escape::{encode_double_quoted_attribute as encode_attr, encode_text};
+use maud::{html, Markup, PreEscaped};
 use serde_json::{json, Value};
 
 use super::board_editor::{
     app_list, cell_style, compute_placements, edit_bar_html, editor_blob, editor_strings,
     layout_css, script_json, sorted_layouts, usable_integrations, widget_catalog, ItemPlacement,
 };
-use crate::icons;
+use crate::icons::{self, icon};
 use crate::layout::{
-    build_spotlight_items, legacy_body, render_page, urlencoding, PageContext, ServerUiSettings,
+    build_spotlight_items, render_page, urlencoding, PageContext, ServerUiSettings,
 };
 use crate::WebState;
 
@@ -59,22 +59,27 @@ pub async fn home_page(
         let ui = ServerUiSettings::load(&state.db).await;
         let is_admin = session.as_ref().is_some_and(AuthSession::is_admin);
         let spotlight = build_spotlight_items(state, &visible, is_admin, false).await;
-        let body = if session.is_some() {
-            r#"<div class="card empty-board-card">
-  <h1 class="page-title">Welcome to Homarr</h1>
-  <p class="muted">No boards exist yet. Create your first board to start customizing your dashboard.</p>
-  <div class="btn-row-center">
-    <a class="btn btn-primary" href="/manage/boards">Create Board</a>
-  </div>
-</div>"#
+        let (text, href, cta) = if session.is_some() {
+            (
+                "No boards exist yet. Create your first board to start customizing your dashboard.",
+                "/manage/boards",
+                "Create Board",
+            )
         } else {
-            r#"<div class="card empty-board-card">
-  <h1 class="page-title">Welcome to Homarr</h1>
-  <p class="muted">No public boards are visible yet. Sign in to access or create your boards.</p>
-  <div class="btn-row-center">
-    <a class="btn btn-primary" href="/auth/login">Sign In</a>
-  </div>
-</div>"#
+            (
+                "No public boards are visible yet. Sign in to access or create your boards.",
+                "/auth/login",
+                "Sign In",
+            )
+        };
+        let body = html! {
+            div.card.empty-board-card {
+                h1.page-title { "Welcome to Homarr" }
+                p.muted { (text) }
+                div.btn-row-center {
+                    a.btn.btn-primary href=(href) { (cta) }
+                }
+            }
         };
         let mut ctx = PageContext {
             session: session.as_ref(),
@@ -82,7 +87,7 @@ pub async fn home_page(
             demo_read_only: state.config.demo_read_only,
             boards: &visible,
             spotlight_items: &spotlight,
-            ..PageContext::minimal("Home", legacy_body(body), &locale, &web.i18n)
+            ..PageContext::minimal("Home", body, &locale, &web.i18n)
         };
         ui.apply(&mut ctx);
         return Html(render_page(ctx)).into_response();
@@ -127,13 +132,18 @@ pub async fn boards_index_page(
     }
     let locale = web.i18n.negotiate(&headers);
     let ui = ServerUiSettings::load(&state.db).await;
-    let body = r#"<div class="card empty-board-card"><h1 class="page-title">Boards</h1><p class="muted">No visible boards found.</p></div>"#;
+    let body = html! {
+        div.card.empty-board-card {
+            h1.page-title { "Boards" }
+            p.muted { "No visible boards found." }
+        }
+    };
     let mut ctx = PageContext {
         session: session.as_ref(),
         demo_mode: state.config.demo_mode,
         demo_read_only: state.config.demo_read_only,
         boards: &visible,
-        ..PageContext::minimal("Boards", legacy_body(body), &locale, &web.i18n)
+        ..PageContext::minimal("Boards", body, &locale, &web.i18n)
     };
     ui.apply(&mut ctx);
     Html(render_page(ctx)).into_response()
@@ -188,113 +198,86 @@ pub async fn board_settings_page(
 
     let locale = web.i18n.negotiate(&headers);
     let b = &full.board;
-    let public_checked = if b.is_public { "checked" } else { "" };
-    let disable_status_checked = if b.disable_status { "checked" } else { "" };
     let selected_radius = b.item_radius.as_deref().unwrap_or("lg");
-    let mut radius_opts = String::new();
-    for (val, label) in [
-        ("xs", "Extra Small (4px)"),
-        ("sm", "Small (6px)"),
-        ("md", "Medium (8px)"),
-        ("lg", "Large (12px)"),
-        ("xl", "Extra Large (16px)"),
-    ] {
-        let sel = if selected_radius == val {
-            " selected"
-        } else {
-            ""
-        };
-        radius_opts.push_str(&format!(r#"<option value="{val}"{sel}>{label}</option>"#));
-    }
-
-    let select_opts = |current: &str, values: &[&str]| -> String {
-        values
-            .iter()
-            .map(|v| {
-                let sel = if *v == current { " selected" } else { "" };
-                format!(r#"<option value="{v}"{sel}>{v}</option>"#)
-            })
-            .collect()
+    let select_opts = |current: &str, values: &[&str]| -> Markup {
+        html! {
+            @for v in values {
+                option value=(v) selected[*v == current] { (v) }
+            }
+        }
     };
-    let attachment_opts = select_opts(&b.background_image_attachment, &["fixed", "scroll"]);
-    let repeat_opts = select_opts(
-        &b.background_image_repeat,
-        &["no-repeat", "repeat", "repeat-x", "repeat-y"],
-    );
-    let size_opts = select_opts(&b.background_image_size, &["cover", "contain", "auto"]);
+    let bid_url = urlencoding(&b.id);
+    let opacity = b.opacity.clamp(10, 100);
 
-    let body = format!(
-        r##"<div class="page-header">
-  <div>
-    <h1 class="page-title">Board Settings: {bname}</h1>
-    <p class="muted" style="margin:4px 0 0">Customize layout appearance, background, card glass opacity, and access. Columns and responsive layouts are edited in the board editor (Edit mode, Layouts).</p>
-  </div>
-  <div style="display:flex;gap:8px">
-    <a class="btn btn-sm" href="/boards/{bname_url}">Back to Board</a>
-    <a class="btn btn-sm" href="/api/boards/{bid_attr}/export">Export JSON</a>
-  </div>
-</div>
-<div class="card">
-  <form class="form-grid" data-api-form="/api/boards/{bid_attr}" data-method="PATCH" data-clear-empty>
-    <div class="form-row"><label>Board Name</label><input name="name" value="{bname_attr}" required /></div>
-    <div class="form-row"><label>Page Title</label><input name="pageTitle" value="{page_title}" placeholder="Homarr" /></div>
-    <div class="form-row">
-      <label>Background Image URL</label>
-      <div style="display:flex;gap:8px">
-        <input id="bg-url-input" name="backgroundImageUrl" value="{bg_url}" placeholder="/images/demo-dashboard-background.svg" />
-        <button type="button" class="btn btn-sm" style="white-space:nowrap" onclick="document.getElementById('bg-url-input').value='/images/demo-dashboard-background.svg'">Use Demo BG</button>
-      </div>
-    </div>
-    <div class="form-row"><label>Meta Title</label><input name="metaTitle" value="{meta_title}" /></div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="form-row"><label>Logo Image URL</label><input name="logoImageUrl" value="{logo_url}" placeholder="/logo/homarr.svg" /></div>
-      <div class="form-row"><label>Favicon URL</label><input name="faviconImageUrl" value="{favicon_url}" /></div>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
-      <div class="form-row"><label>Background Attachment</label><select name="backgroundImageAttachment">{attachment_opts}</select></div>
-      <div class="form-row"><label>Background Repeat</label><select name="backgroundImageRepeat">{repeat_opts}</select></div>
-      <div class="form-row"><label>Background Size</label><select name="backgroundImageSize">{size_opts}</select></div>
-    </div>
-    <div class="form-row">
-      <label>Card Opacity (<span id="opacity-val">{opacity}%</span>)</label>
-      <input type="range" name="opacity" min="10" max="100" value="{opacity}" oninput="document.getElementById('opacity-val').textContent=this.value+'%'" />
-    </div>
-    <div class="form-row">
-      <label>Card Border Radius</label>
-      <select name="itemRadius">{radius_opts}</select>
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
-      <div class="form-row">
-        <label>Primary Accent Color</label>
-        <input type="color" name="primaryColor" value="{primary}" style="height:40px;padding:4px" />
-      </div>
-      <div class="form-row">
-        <label>Secondary Accent Color</label>
-        <input type="color" name="secondaryColor" value="{secondary}" style="height:40px;padding:4px" />
-      </div>
-    </div>
-    <div class="form-row"><label>Custom CSS</label><textarea name="customCss" rows="5">{custom_css}</textarea></div>
-    <div style="display:flex;gap:18px;flex-wrap:wrap">
-      <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="isPublic" style="width:auto" {public_checked} /> Public Board</label>
-      <label style="display:flex;align-items:center;gap:8px"><input type="checkbox" name="disableStatus" style="width:auto" {disable_status_checked} /> Disable App Status Pings</label>
-    </div>
-    <div><button type="submit" class="btn btn-primary">Save Settings</button></div>
-  </form>
-</div>"##,
-        bid_attr = encode_attr(&urlencoding(&b.id)),
-        bname = encode_text(&b.name),
-        bname_attr = encode_attr(&b.name),
-        bname_url = encode_attr(&urlencoding(&b.name)),
-        page_title = encode_attr(b.page_title.as_deref().unwrap_or("")),
-        meta_title = encode_attr(b.meta_title.as_deref().unwrap_or("")),
-        logo_url = encode_attr(b.logo_image_url.as_deref().unwrap_or("")),
-        favicon_url = encode_attr(b.favicon_image_url.as_deref().unwrap_or("")),
-        bg_url = encode_attr(b.background_image_url.as_deref().unwrap_or("")),
-        opacity = b.opacity.clamp(10, 100),
-        primary = encode_attr(b.primary_color.as_deref().unwrap_or("#fa5252")),
-        secondary = encode_attr(b.secondary_color.as_deref().unwrap_or("#fd7e14")),
-        custom_css = encode_text(b.custom_css.as_deref().unwrap_or("")),
-    );
+    let body = html! {
+        div.page-header {
+            div {
+                h1.page-title { "Board Settings: " (b.name) }
+                p.muted style="margin:4px 0 0" { "Customize layout appearance, background, card glass opacity, and access. Columns and responsive layouts are edited in the board editor (Edit mode, Layouts)." }
+            }
+            div style="display:flex;gap:8px" {
+                a.btn.btn-sm href={ "/boards/" (urlencoding(&b.name)) } { "Back to Board" }
+                a.btn.btn-sm href={ "/api/boards/" (bid_url) "/export" } { "Export JSON" }
+            }
+        }
+        div.card {
+            form.form-grid data-api-form={ "/api/boards/" (bid_url) } data-method="PATCH" data-clear-empty {
+                div.form-row { label { "Board Name" } input name="name" value=(b.name) required; }
+                div.form-row { label { "Page Title" } input name="pageTitle" value=(b.page_title.as_deref().unwrap_or("")) placeholder="Homarr"; }
+                div.form-row {
+                    label { "Background Image URL" }
+                    div style="display:flex;gap:8px" {
+                        input #bg-url-input name="backgroundImageUrl" value=(b.background_image_url.as_deref().unwrap_or("")) placeholder="/images/demo-dashboard-background.svg";
+                        button.btn.btn-sm type="button" style="white-space:nowrap" onclick="document.getElementById('bg-url-input').value='/images/demo-dashboard-background.svg'" { "Use Demo BG" }
+                    }
+                }
+                div.form-row { label { "Meta Title" } input name="metaTitle" value=(b.meta_title.as_deref().unwrap_or("")); }
+                div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" {
+                    div.form-row { label { "Logo Image URL" } input name="logoImageUrl" value=(b.logo_image_url.as_deref().unwrap_or("")) placeholder="/logo/homarr.svg"; }
+                    div.form-row { label { "Favicon URL" } input name="faviconImageUrl" value=(b.favicon_image_url.as_deref().unwrap_or("")); }
+                }
+                div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px" {
+                    div.form-row { label { "Background Attachment" } select name="backgroundImageAttachment" { (select_opts(&b.background_image_attachment, &["fixed", "scroll"])) } }
+                    div.form-row { label { "Background Repeat" } select name="backgroundImageRepeat" { (select_opts(&b.background_image_repeat, &["no-repeat", "repeat", "repeat-x", "repeat-y"])) } }
+                    div.form-row { label { "Background Size" } select name="backgroundImageSize" { (select_opts(&b.background_image_size, &["cover", "contain", "auto"])) } }
+                }
+                div.form-row {
+                    label { "Card Opacity (" span #opacity-val { (opacity) "%" } ")" }
+                    input type="range" name="opacity" min="10" max="100" value=(opacity) oninput="document.getElementById('opacity-val').textContent=this.value+'%'";
+                }
+                div.form-row {
+                    label { "Card Border Radius" }
+                    select name="itemRadius" {
+                        @for (val, label) in [
+                            ("xs", "Extra Small (4px)"),
+                            ("sm", "Small (6px)"),
+                            ("md", "Medium (8px)"),
+                            ("lg", "Large (12px)"),
+                            ("xl", "Extra Large (16px)"),
+                        ] {
+                            option value=(val) selected[selected_radius == val] { (label) }
+                        }
+                    }
+                }
+                div style="display:grid;grid-template-columns:1fr 1fr;gap:12px" {
+                    div.form-row {
+                        label { "Primary Accent Color" }
+                        input type="color" name="primaryColor" value=(b.primary_color.as_deref().unwrap_or("#fa5252")) style="height:40px;padding:4px";
+                    }
+                    div.form-row {
+                        label { "Secondary Accent Color" }
+                        input type="color" name="secondaryColor" value=(b.secondary_color.as_deref().unwrap_or("#fd7e14")) style="height:40px;padding:4px";
+                    }
+                }
+                div.form-row { label { "Custom CSS" } textarea name="customCss" rows="5" { (b.custom_css.as_deref().unwrap_or("")) } }
+                div style="display:flex;gap:18px;flex-wrap:wrap" {
+                    label style="display:flex;align-items:center;gap:8px" { input type="checkbox" name="isPublic" style="width:auto" checked[b.is_public]; " Public Board" }
+                    label style="display:flex;align-items:center;gap:8px" { input type="checkbox" name="disableStatus" style="width:auto" checked[b.disable_status]; " Disable App Status Pings" }
+                }
+                div { button.btn.btn-primary type="submit" { "Save Settings" } }
+            }
+        }
+    };
 
     let ui = ServerUiSettings::load(&state.db).await;
     let spotlight = build_spotlight_items(state, &visible, sess.is_admin(), false).await;
@@ -305,7 +288,7 @@ pub async fn board_settings_page(
         boards: &visible,
         active_board_name: Some(&b.name),
         spotlight_items: &spotlight,
-        ..PageContext::minimal("Board Settings", legacy_body(&body), &locale, &web.i18n)
+        ..PageContext::minimal("Board Settings", body, &locale, &web.i18n)
     };
     ui.apply(&mut ctx);
     Html(render_page(ctx)).into_response()
@@ -388,7 +371,7 @@ impl<'a> GridNode<'a> {
 /// Renders section grids, recursing into the container sections placed inside them.
 struct ContainerRenderer<'a> {
     children: HashMap<&'a str, Vec<GridNode<'a>>>,
-    item_html: HashMap<&'a str, String>,
+    item_html: HashMap<&'a str, Markup>,
     placements: &'a HashMap<String, ItemPlacement>,
     collapsed: &'a HashMap<String, bool>,
     /// Set for signed-in viewers: collapse toggles are then stored per user on the server.
@@ -425,26 +408,22 @@ impl<'a> ContainerRenderer<'a> {
         })
     }
 
-    fn grid(&self, section_id: &str) -> String {
-        let mut html = String::new();
-        for node in self.children.get(section_id).into_iter().flatten() {
-            match node {
-                GridNode::Item(id) => {
-                    if let Some(item) = self.item_html.get(id) {
-                        html.push_str(item);
-                    }
+    fn grid(&self, section_id: &str) -> Markup {
+        html! {
+            @for node in self.children.get(section_id).into_iter().flatten() {
+                @match node {
+                    GridNode::Item(id) => { @if let Some(item) = self.item_html.get(id) { (item) } }
+                    GridNode::Container(sec) => { (self.container(sec)) }
                 }
-                GridNode::Container(sec) => html.push_str(&self.container(sec)),
             }
         }
-        html
     }
 
     /// A container section: a card placed in its parent grid with its own inner grid whose
     /// column count is the container's width (see `.container-grid` in homarr.css).
-    fn container(&self, sec: &SectionRecord) -> String {
+    fn container(&self, sec: &SectionRecord) -> Markup {
         let Some(pl) = self.placements.get(&sec.id) else {
-            return String::new();
+            return html! {};
         };
         let opts = &sec.options;
         let flag =
@@ -488,57 +467,39 @@ impl<'a> ContainerRenderer<'a> {
             classes.push_str(&c);
         }
 
-        let sid = encode_attr(&sec.id);
-        let label_text = encode_text(label);
-        let label_attr = encode_attr(label);
+        let sid = &sec.id;
         let expanded = if collapsed { "false" } else { "true" };
-        let chev = icons::CHEVRON_DOWN;
-        let toggle = if collapsible && show_label {
-            format!(
-                r#"<button type="button" class="board-container-header" data-container-toggle onclick="window.toggleCategory(this)" aria-expanded="{expanded}" aria-controls="board-container-{sid}-content" title="{label_attr}"><span class="board-container-title">{label_text}</span><span class="category-chevron">{chev}</span></button>"#
-            )
-        } else if collapsible {
-            format!(
-                r#"<button type="button" class="board-container-toggle" data-container-toggle onclick="window.toggleCategory(this)" aria-expanded="{expanded}" aria-controls="board-container-{sid}-content" aria-label="{label_attr}" title="{label_attr}"><span class="category-chevron">{chev}</span></button>"#
-            )
-        } else if show_label && title.is_some() {
-            format!(
-                r#"<span class="board-container-label" title="{label_attr}">{label_text}</span>"#
-            )
-        } else {
-            String::new()
-        };
-        let open_all = if show_open_all {
-            let name = encode_attr(&self.open_all_label.replace("{name}", label)).to_string();
-            format!(
-                r#"<button type="button" class="icon-btn icon-btn-sm board-container-open-all" onclick="window.openContainerApps(this)" title="{name}" aria-label="{name}">{icon}</button>"#,
-                icon = icons::EXTERNAL_LINK,
-            )
-        } else {
-            String::new()
-        };
-        let bar = if toggle.is_empty() && open_all.is_empty() {
-            String::new()
-        } else {
-            format!(r#"<div class="board-container-bar">{toggle}{open_all}</div>"#)
-        };
+        let controls = format!("board-container-{sid}-content");
+        let has_label = show_label && title.is_some();
+        let board_id = self.collapse_board_id.filter(|_| collapsible);
 
-        format!(
-            r#"<div class="grid-item board-section board-container{classes}" style="{style}" data-section-id="{sid}"{board_attr} data-collapsible="{collapsible}" data-collapsed="{collapsed}" data-scrollable="{scrollable}">
-  {bar}
-  <div class="board-container-body" id="board-container-{sid}-content">
-    <div class="board-grid container-grid" data-layouts>{inner}</div>
-  </div>
-</div>"#,
-            classes = encode_attr(&classes),
-            style = encode_attr(&style),
-            inner = self.grid(&sec.id),
-            board_attr = self
-                .collapse_board_id
-                .filter(|_| collapsible)
-                .map(|id| format!(r#" data-board-id="{}""#, encode_attr(id)))
-                .unwrap_or_default(),
-        )
+        html! {
+            div class={ "grid-item board-section board-container" (classes) } style=(style) data-section-id=(sid) data-board-id=[board_id] data-collapsible=(collapsible) data-collapsed=(collapsed) data-scrollable=(scrollable) {
+                @if collapsible || has_label || show_open_all {
+                    div.board-container-bar {
+                        @if collapsible && show_label {
+                            button.board-container-header type="button" data-container-toggle onclick="window.toggleCategory(this)" aria-expanded=(expanded) aria-controls=(controls) title=(label) {
+                                span.board-container-title { (label) }
+                                span.category-chevron { (icon(icons::CHEVRON_DOWN)) }
+                            }
+                        } @else if collapsible {
+                            button.board-container-toggle type="button" data-container-toggle onclick="window.toggleCategory(this)" aria-expanded=(expanded) aria-controls=(controls) aria-label=(label) title=(label) {
+                                span.category-chevron { (icon(icons::CHEVRON_DOWN)) }
+                            }
+                        } @else if has_label {
+                            span.board-container-label title=(label) { (label) }
+                        }
+                        @if show_open_all {
+                            @let name = self.open_all_label.replace("{name}", label);
+                            button.icon-btn.icon-btn-sm.board-container-open-all type="button" onclick="window.openContainerApps(this)" title=(name) aria-label=(name) { (icon(icons::EXTERNAL_LINK)) }
+                        }
+                    }
+                }
+                div.board-container-body id=(controls) {
+                    div.board-grid.container-grid data-layouts { (self.grid(&sec.id)) }
+                }
+            }
+        }
     }
 }
 
@@ -600,14 +561,12 @@ async fn render_full_board(
     };
 
     let editor_strings = editor_strings(&web.i18n, &locale);
-    let tr_attr = |key: &str| -> String {
-        encode_attr(
-            editor_strings
-                .get(key)
-                .and_then(Value::as_str)
-                .unwrap_or(key),
-        )
-        .to_string()
+    let tr = |key: &str| -> String {
+        editor_strings
+            .get(key)
+            .and_then(Value::as_str)
+            .unwrap_or(key)
+            .to_string()
     };
 
     // Resolve all placed widgets concurrently (cached in the resolver) instead of one by one.
@@ -632,7 +591,7 @@ async fn render_full_board(
         )
         .await;
 
-    let mut item_html: HashMap<&str, String> = HashMap::new();
+    let mut item_html: HashMap<&str, Markup> = HashMap::new();
     for ((item, pl), result) in placed_items.into_iter().zip(resolved) {
         let kind = WidgetKind::from_str_opt(&item.kind).unwrap_or(WidgetKind::Notebook);
         let data = result.unwrap_or_else(|e| json!({ "error": e.to_string() }));
@@ -664,39 +623,25 @@ async fn render_full_board(
             extra_style.push_str(&format!("border-color:{color};border-style:solid;"));
         }
 
-        let edit_controls = if can_edit {
-            format!(
-                r#"<div class="item-edit-overlay" data-editor-drag aria-hidden="true"></div>
-  <div class="item-edit-controls">
-<button type="button" class="icon-btn icon-btn-sm" title="{edit_t}" aria-label="{edit_t}" data-editor-action="edit-item" data-item-id="{iid}">{pencil}</button>
-<button type="button" class="icon-btn icon-btn-sm" title="{dup_t}" aria-label="{dup_t}" data-editor-action="duplicate-item" data-item-id="{iid}">{copy}</button>
-<button type="button" class="icon-btn icon-btn-sm icon-btn-danger" title="{rm_t}" aria-label="{rm_t}" data-editor-action="remove-item" data-item-id="{iid}">{trash}</button>
-  </div>
-  <div class="item-resize-handle" data-editor-resize title="Resize"></div>"#,
-                iid = encode_attr(&item.id),
-                edit_t = tr_attr("editItem"),
-                dup_t = tr_attr("duplicateItem"),
-                rm_t = tr_attr("removeItem"),
-                pencil = icons::PENCIL,
-                copy = icons::COPY,
-                trash = icons::TRASH,
-            )
-        } else {
-            String::new()
-        };
-
+        let (edit_t, dup_t, rm_t) = (tr("editItem"), tr("duplicateItem"), tr("removeItem"));
         item_html.insert(
             &item.id,
-            format!(
-                r#"<div class="grid-item{extra_classes}" style="{extra_style}" data-item-id="{iid}" data-kind="{kind_attr}">
-  {edit_controls}
-  {rendered_card}
-</div>"#,
-                extra_classes = encode_attr(&extra_classes),
-                extra_style = encode_attr(&extra_style),
-                iid = encode_attr(&item.id),
-                kind_attr = encode_attr(kind.as_str()),
-            ),
+            html! {
+                div class={ "grid-item" (extra_classes) } style=(extra_style) data-item-id=(item.id) data-kind=(kind.as_str()) {
+                    @if can_edit {
+                        div.item-edit-overlay data-editor-drag aria-hidden="true" {}
+                        div.item-edit-controls {
+                            button.icon-btn.icon-btn-sm type="button" title=(edit_t) aria-label=(edit_t) data-editor-action="edit-item" data-item-id=(item.id) { (icon(icons::PENCIL)) }
+                            button.icon-btn.icon-btn-sm type="button" title=(dup_t) aria-label=(dup_t) data-editor-action="duplicate-item" data-item-id=(item.id) { (icon(icons::COPY)) }
+                            button.icon-btn.icon-btn-sm.icon-btn-danger type="button" title=(rm_t) aria-label=(rm_t) data-editor-action="remove-item" data-item-id=(item.id) { (icon(icons::TRASH)) }
+                        }
+                        div.item-resize-handle data-editor-resize title="Resize" {}
+                    }
+                    // safe: rendered by homarr-widgets (escapes its own data)
+                    // shortcut: String wrapped as raw HTML, drop PreEscaped once render.rs returns Markup
+                    (PreEscaped(rendered_card))
+                }
+            },
         );
     }
 
@@ -727,83 +672,58 @@ async fn render_full_board(
     }
     grids.sort();
 
-    let mut sections_html = String::new();
-    for sec in ordered_sections {
-        let sec_label = sec
-            .name
-            .as_deref()
-            .filter(|s| !s.trim().is_empty())
-            .map(str::to_string)
-            .unwrap_or_else(|| {
-                if sec.kind == "category" {
-                    "Category".to_string()
-                } else {
-                    "Main Canvas".to_string()
+    let (up_t, down_t, edit_t, rm_t) = (
+        tr("moveUp"),
+        tr("moveDown"),
+        tr("editSection"),
+        tr("removeSection"),
+    );
+    let sections_html = html! {
+        @for sec in ordered_sections {
+            @let sec_label = sec
+                .name
+                .as_deref()
+                .filter(|s| !s.trim().is_empty())
+                .unwrap_or(if sec.kind == "category" { "Category" } else { "Main Canvas" });
+            @let sid = &sec.id;
+            @let section_edit_bar = html! {
+                @if can_edit {
+                    div.section-edit-bar {
+                        span.section-edit-name { (sec_label) }
+                        span.section-edit-actions {
+                            button.icon-btn.icon-btn-sm type="button" title=(up_t) aria-label=(up_t) data-editor-action="section-up" data-section-id=(sid) { (icon(icons::ARROW_UP)) }
+                            button.icon-btn.icon-btn-sm type="button" title=(down_t) aria-label=(down_t) data-editor-action="section-down" data-section-id=(sid) { (icon(icons::ARROW_DOWN)) }
+                            button.icon-btn.icon-btn-sm type="button" title=(edit_t) aria-label=(edit_t) data-editor-action="section-edit" data-section-id=(sid) { (icon(icons::PENCIL)) }
+                            button.icon-btn.icon-btn-sm.icon-btn-danger type="button" title=(rm_t) aria-label=(rm_t) data-editor-action="section-remove" data-section-id=(sid) { (icon(icons::TRASH)) }
+                        }
+                    }
                 }
-            });
-        let item_count = grids.item_count(&sec.id);
-        let grid_html = grids.grid(&sec.id);
-
-        let sid = encode_attr(&sec.id);
-        let section_edit_bar = if can_edit {
-            format!(
-                r#"<div class="section-edit-bar">
-    <span class="section-edit-name">{name}</span>
-    <span class="section-edit-actions">
-      <button type="button" class="icon-btn icon-btn-sm" title="{up_t}" aria-label="{up_t}" data-editor-action="section-up" data-section-id="{sid}">{up}</button>
-      <button type="button" class="icon-btn icon-btn-sm" title="{down_t}" aria-label="{down_t}" data-editor-action="section-down" data-section-id="{sid}">{down}</button>
-      <button type="button" class="icon-btn icon-btn-sm" title="{edit_t}" aria-label="{edit_t}" data-editor-action="section-edit" data-section-id="{sid}">{pencil}</button>
-      <button type="button" class="icon-btn icon-btn-sm icon-btn-danger" title="{rm_t}" aria-label="{rm_t}" data-editor-action="section-remove" data-section-id="{sid}">{trash}</button>
-    </span>
-  </div>"#,
-                name = encode_text(&sec_label),
-                up_t = tr_attr("moveUp"),
-                down_t = tr_attr("moveDown"),
-                edit_t = tr_attr("editSection"),
-                rm_t = tr_attr("removeSection"),
-                up = icons::ARROW_UP,
-                down = icons::ARROW_DOWN,
-                pencil = icons::PENCIL,
-                trash = icons::TRASH,
-            )
-        } else {
-            String::new()
-        };
-        if sec.kind == "category" {
-            sections_html.push_str(&format!(
-                r#"<section class="board-section category-section" data-section-id="{sid}" data-collapsed="false">
-  {section_edit_bar}
-  <button type="button" class="category-header" onclick="window.toggleCategory(this)" aria-expanded="true">
-    <span class="category-title-wrap">
-      <span class="category-chevron">{chev}</span>
-      <span class="category-title">{title}</span>
-      <span class="category-count">{item_count}</span>
-    </span>
-  </button>
-  <div class="category-body">
-    <div class="board-grid" data-layouts>{grid_html}</div>
-  </div>
-</section>"#,
-                chev = icons::CHEVRON_DOWN,
-                title = encode_text(&sec_label),
-            ));
-        } else {
-            let optional_header = match sec.name.as_deref().map(str::trim) {
-                Some(name) if !name.is_empty() && name != "Main" => format!(
-                    r#"<div class="section-header"><h2 class="section-title">{}</h2></div>"#,
-                    encode_text(name)
-                ),
-                _ => String::new(),
             };
-            sections_html.push_str(&format!(
-                r#"<section class="board-section board-section-empty" data-section-id="{sid}">
-  {section_edit_bar}
-  {optional_header}
-  <div class="board-grid" data-layouts>{grid_html}</div>
-</section>"#,
-            ));
+            @if sec.kind == "category" {
+                section.board-section.category-section data-section-id=(sid) data-collapsed="false" {
+                    (section_edit_bar)
+                    button.category-header type="button" onclick="window.toggleCategory(this)" aria-expanded="true" {
+                        span.category-title-wrap {
+                            span.category-chevron { (icon(icons::CHEVRON_DOWN)) }
+                            span.category-title { (sec_label) }
+                            span.category-count { (grids.item_count(sid)) }
+                        }
+                    }
+                    div.category-body {
+                        div.board-grid data-layouts { (grids.grid(sid)) }
+                    }
+                }
+            } @else {
+                section.board-section.board-section-empty data-section-id=(sid) {
+                    (section_edit_bar)
+                    @if let Some(name) = sec.name.as_deref().map(str::trim).filter(|n| !n.is_empty() && *n != "Main") {
+                        div.section-header { h2.section-title { (name) } }
+                    }
+                    div.board-grid data-layouts { (grids.grid(sid)) }
+                }
+            }
         }
-    }
+    };
 
     let (edit_mode_bar, editor_script) = if can_edit {
         let widgets = widget_catalog(&web.i18n, &locale);
@@ -821,16 +741,18 @@ async fn render_full_board(
             integrations,
             editor_strings.clone(),
         );
+        let editor_js = format!("window.__HOMARR_EDITOR__ = {};", script_json(&blob));
         (
-            edit_bar_html(&full.board.name, &editor_strings),
-            format!(
-                r#"<div id="editor-modal-root"></div>
-<script>window.__HOMARR_EDITOR__ = {};</script>"#,
-                script_json(&blob)
-            ),
+            // safe: edit_bar_html escapes the board name and strings it interpolates
+            PreEscaped(edit_bar_html(&full.board.name, &editor_strings)),
+            html! {
+                div #editor-modal-root {}
+                // safe: script_json escapes `<`, `>` and `&`, so the data cannot close the tag
+                script { (PreEscaped(editor_js)) }
+            },
         )
     } else {
-        (String::new(), String::new())
+        (PreEscaped(String::new()), html! {})
     };
 
     let page_title = full
@@ -840,19 +762,20 @@ async fn render_full_board(
         .filter(|s| !s.trim().is_empty())
         .unwrap_or(&full.board.name);
 
-    let body = format!(
-        r#"<style>{layout_style}</style>
-{edit_mode_bar}
-<div class="board-sections-stack">{sections_html}</div>
-{editor_script}"#,
-    );
+    let body = html! {
+        // safe: layout CSS is built from numbers and ids filtered to [A-Za-z0-9_-]
+        style { (PreEscaped(layout_style)) }
+        (edit_mode_bar)
+        div.board-sections-stack { (sections_html) }
+        (editor_script)
+    };
 
     let ui = ServerUiSettings::load(&state.db).await;
     let is_admin = session.is_some_and(AuthSession::is_admin);
     let spotlight = build_spotlight_items(state, visible_boards, is_admin, can_edit).await;
     let mut ctx = PageContext {
         title: page_title,
-        body: legacy_body(&body),
+        body,
         session,
         demo_mode: state.config.demo_mode,
         demo_read_only: state.config.demo_read_only,
@@ -895,4 +818,57 @@ async fn render_full_board(
         ctx.app_name = Some(title);
     }
     Html(render_page(ctx))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pages::board_editor::Cell;
+
+    #[test]
+    fn container_escapes_title_and_id() {
+        let sec = SectionRecord {
+            id: "s\"1".into(),
+            board_id: "b".into(),
+            kind: "container".into(),
+            x_offset: None,
+            y_offset: None,
+            name: None,
+            options: json!({ "title": "<img src=x onerror=alert(1)>\"", "collapsible": true, "showOpenAll": true }),
+            layouts: Vec::new(),
+        };
+        let cell = Cell {
+            x: 0,
+            y: 0,
+            w: 2,
+            h: 2,
+            real: true,
+        };
+        let placements = HashMap::from([(
+            sec.id.clone(),
+            ItemPlacement {
+                section_id: "root".into(),
+                cells: vec![cell],
+            },
+        )]);
+        let collapsed = HashMap::new();
+        let r = ContainerRenderer {
+            children: HashMap::new(),
+            item_html: HashMap::new(),
+            placements: &placements,
+            collapsed: &collapsed,
+            collapse_board_id: Some("b\"<"),
+            open_all_label: "Open {name}".into(),
+            untitled_label: "Untitled".into(),
+        };
+        let html = r.container(&sec).into_string();
+        assert!(!html.contains("<img"), "{html}");
+        assert!(html.contains(r#"data-section-id="s&quot;1""#), "{html}");
+        assert!(html.contains(r#"data-board-id="b&quot;&lt;""#), "{html}");
+        assert!(
+            html.contains(r#"title="&lt;img src=x onerror=alert(1)&gt;&quot;""#),
+            "{html}"
+        );
+        assert!(html.contains(r#"data-collapsible="true""#), "{html}");
+    }
 }
