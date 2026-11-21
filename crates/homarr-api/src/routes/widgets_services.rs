@@ -305,12 +305,57 @@ pub struct ExecuteCwBody {
     pub options: HashMap<String, Value>,
 }
 
+/// Executing a definition runs admin-configured requests with stored secrets, so besides admins
+/// only viewers of a board that actually uses the definition may do it, and only read-only
+/// requests unless the caller may write.
+async fn authorize_custom_widget_execution(
+    state: &AppState,
+    session: &AuthSession,
+    definition_id: &str,
+    request_id: &str,
+) -> HomarrResult<()> {
+    let not_found = || HomarrError::NotFound("Custom widget not found".into());
+    let def = cw_repo::get_v2_by_id(&state.db, definition_id)
+        .await?
+        .ok_or_else(not_found)?;
+
+    if !session.is_admin() {
+        let mut allowed = false;
+        for board_id in boards::board_ids_using_custom_widget(&state.db, definition_id).await? {
+            if let Some(board) = boards::get_by_id(&state.db, &board_id).await? {
+                if can_view_board(&state.db, Some(session), &board).await? {
+                    allowed = true;
+                    break;
+                }
+            }
+        }
+        if !allowed {
+            return Err(not_found());
+        }
+    }
+
+    let method = def
+        .requests
+        .as_array()
+        .and_then(|reqs| {
+            reqs.iter()
+                .find(|r| r.get("id").and_then(Value::as_str) == Some(request_id))
+        })
+        .and_then(|r| r.get("method").and_then(Value::as_str))
+        .unwrap_or("GET");
+    if !(method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD")) {
+        session.require_writable(state.demo_read_only_active())?;
+    }
+    Ok(())
+}
+
 pub async fn execute_custom_widget(
     RequireAuth(session): RequireAuth,
     State(state): State<AppState>,
     Path(id): Path<String>,
     Json(body): Json<ExecuteCwBody>,
 ) -> HomarrResult<Json<Value>> {
+    authorize_custom_widget_execution(&state, &session, &id, &body.request_id).await?;
     let result = state
         .services
         .custom_widgets
