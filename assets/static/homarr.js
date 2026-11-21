@@ -828,6 +828,14 @@
     const data = await resp.json().catch(() => ({}));
     if (resp.ok) {
       toast("Action completed", "ok");
+      const reveal = btn.getAttribute("data-reveal-invite");
+      const box = reveal && document.querySelector(reveal);
+      if (box && data.invite && data.invite.token) {
+        // The raw invite token is only returned once; show it instead of reloading.
+        box.querySelector("code").textContent = location.origin + "/auth/invite/" + data.invite.token;
+        box.hidden = false;
+        return;
+      }
       if (btn.getAttribute("data-reload") !== "false") location.reload();
     } else {
       toast((data.error && data.error.message) || "Action failed", "error");

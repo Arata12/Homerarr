@@ -79,6 +79,14 @@ mod tests {
         exercise_database(&db).await;
     }
 
+    fn sqlite_migration_count() -> usize {
+        let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/../../migrations/sqlite");
+        std::fs::read_dir(dir)
+            .unwrap()
+            .filter(|e| e.as_ref().unwrap().path().extension().is_some_and(|x| x == "sql"))
+            .count()
+    }
+
     #[tokio::test]
     async fn sqlite_migrate_is_tracked_and_idempotent() {
         let db = Database::connect(DatabaseDriver::Sqlite, "sqlite::memory:")
@@ -94,7 +102,8 @@ mod tests {
                 .fetch_all(pool)
                 .await
                 .unwrap();
-        assert_eq!(rows, vec![(1, true)]);
+        assert_eq!(rows.len(), sqlite_migration_count());
+        assert!(rows.iter().all(|(_, ok)| *ok));
     }
 
     #[tokio::test]
@@ -119,7 +128,7 @@ mod tests {
             .fetch_one(pool)
             .await
             .unwrap();
-        assert_eq!(count, 1);
+        assert_eq!(count as usize, sqlite_migration_count());
         let (users,): (i64,) = sqlx::query_as("SELECT COUNT(*) FROM \"user\"")
             .fetch_one(pool)
             .await
@@ -204,6 +213,63 @@ mod tests {
         .await
         .unwrap();
         assert_eq!(state_count, 1);
+    }
+
+    #[tokio::test]
+    async fn session_and_invite_tokens_are_stored_hashed() {
+        let db = Database::connect(DatabaseDriver::Sqlite, "sqlite::memory:")
+            .await
+            .unwrap();
+        db.migrate().await.unwrap();
+        let user = repos::users::create(
+            &db,
+            repos::users::CreateUserInput {
+                id: None,
+                name: "u".into(),
+                email: None,
+                password_hash: None,
+                provider: "credentials".into(),
+                image: None,
+            },
+        )
+        .await
+        .unwrap();
+        let Database::Sqlite(pool) = &db else {
+            unreachable!()
+        };
+
+        repos::sessions::create(&db, "raw-session", &user.id, i64::MAX)
+            .await
+            .unwrap();
+        let (stored,): (String,) = sqlx::query_as(r#"SELECT "session_token" FROM "session""#)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_ne!(stored, "raw-session");
+        assert!(repos::sessions::find_with_user(&db, "raw-session")
+            .await
+            .unwrap()
+            .is_some());
+        assert!(repos::sessions::find_with_user(&db, &stored)
+            .await
+            .unwrap()
+            .is_none());
+
+        let invite = repos::invites::create(&db, &user.id, i64::MAX / 2)
+            .await
+            .unwrap();
+        let (stored,): (String,) = sqlx::query_as(r#"SELECT "token" FROM "invite""#)
+            .fetch_one(pool)
+            .await
+            .unwrap();
+        assert_ne!(stored, invite.token);
+        assert!(repos::invites::find_by_token(&db, &invite.token)
+            .await
+            .unwrap()
+            .is_some());
+        assert!(repos::invites::consume_by_token(&db, &invite.token, 0)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]

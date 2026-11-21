@@ -1,4 +1,4 @@
-use homarr_common::HomarrResult;
+use homarr_common::{hash_token, HomarrResult};
 use sqlx::Row;
 
 use crate::models::SessionWithUser;
@@ -12,12 +12,13 @@ pub async fn create(
     user_id: &str,
     expires_ms: i64,
 ) -> HomarrResult<()> {
+    let session_token = hash_token(session_token);
     match db {
         Database::Sqlite(pool) => {
             sqlx::query(
                 r#"INSERT INTO "session" ("session_token", "user_id", "expires") VALUES (?, ?, ?)"#,
             )
-            .bind(session_token)
+            .bind(&session_token)
             .bind(user_id)
             .bind(expires_ms)
             .execute(pool)
@@ -28,7 +29,7 @@ pub async fn create(
             sqlx::query(
                 r#"INSERT INTO "session" ("session_token", "user_id", "expires") VALUES ($1, $2, $3)"#,
             )
-            .bind(session_token)
+            .bind(&session_token)
             .bind(user_id)
             .bind(ms_to_naive(expires_ms))
             .execute(pool)
@@ -40,6 +41,7 @@ pub async fn create(
 }
 
 pub async fn find_with_user(db: &Database, token: &str) -> HomarrResult<Option<SessionWithUser>> {
+    let token = hash_token(token);
     match db {
         Database::Sqlite(pool) => {
             let row = sqlx::query(
@@ -48,7 +50,7 @@ pub async fn find_with_user(db: &Database, token: &str) -> HomarrResult<Option<S
                    INNER JOIN "user" u ON u."id" = s."user_id"
                    WHERE s."session_token" = ?"#,
             )
-            .bind(token)
+            .bind(&token)
             .fetch_optional(pool)
             .await
             .map_err(map_sqlx_err)?;
@@ -73,7 +75,7 @@ pub async fn find_with_user(db: &Database, token: &str) -> HomarrResult<Option<S
                    INNER JOIN "user" u ON u."id" = s."user_id"
                    WHERE s."session_token" = $1"#,
             )
-            .bind(token)
+            .bind(&token)
             .fetch_optional(pool)
             .await
             .map_err(map_sqlx_err)?;
@@ -96,17 +98,18 @@ pub async fn find_with_user(db: &Database, token: &str) -> HomarrResult<Option<S
 }
 
 pub async fn delete_by_token(db: &Database, token: &str) -> HomarrResult<()> {
+    let token = hash_token(token);
     match db {
         Database::Sqlite(pool) => {
             sqlx::query(r#"DELETE FROM "session" WHERE "session_token" = ?"#)
-                .bind(token)
+                .bind(&token)
                 .execute(pool)
                 .await
                 .map_err(map_sqlx_err)?;
         }
         Database::Postgres(pool) => {
             sqlx::query(r#"DELETE FROM "session" WHERE "session_token" = $1"#)
-                .bind(token)
+                .bind(&token)
                 .execute(pool)
                 .await
                 .map_err(map_sqlx_err)?;
@@ -157,12 +160,12 @@ pub async fn delete_by_user_id_except(
     user_id: &str,
     keep_token: Option<&str>,
 ) -> HomarrResult<u64> {
-    let keep = keep_token.unwrap_or_default();
+    let keep = keep_token.map(hash_token).unwrap_or_default();
     let affected = match db {
         Database::Sqlite(pool) => {
             sqlx::query(r#"DELETE FROM "session" WHERE "user_id" = ? AND "session_token" <> ?"#)
                 .bind(user_id)
-                .bind(keep)
+                .bind(&keep)
                 .execute(pool)
                 .await
                 .map_err(map_sqlx_err)?
@@ -171,7 +174,7 @@ pub async fn delete_by_user_id_except(
         Database::Postgres(pool) => {
             sqlx::query(r#"DELETE FROM "session" WHERE "user_id" = $1 AND "session_token" <> $2"#)
                 .bind(user_id)
-                .bind(keep)
+                .bind(&keep)
                 .execute(pool)
                 .await
                 .map_err(map_sqlx_err)?
