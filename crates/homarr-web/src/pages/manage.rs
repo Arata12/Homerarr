@@ -904,6 +904,9 @@ pub async fn logs_page(
     if let Err(redir) = require_admin_or_redirect(session.as_ref()) {
         return redir.into_response();
     }
+    if web.app.demo_read_only_active() {
+        return (StatusCode::FORBIDDEN, "Demo mode is read-only").into_response();
+    }
     let entries = web.app.logs.recent(150);
     let content = html! {
         div.page-header {

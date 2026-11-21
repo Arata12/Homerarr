@@ -278,7 +278,7 @@ async fn handle_socket(mut socket: WebSocket, state: AppState, session: Option<A
                     }
                 }
             }
-            log_ev = logs_rx.recv(), if is_admin => {
+            log_ev = logs_rx.recv(), if is_admin && !state.demo_read_only_active() => {
                 if let Ok(entry) = log_ev {
                     let frame = json!({
                         "channel": "system:logs",

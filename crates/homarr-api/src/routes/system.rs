@@ -334,15 +334,25 @@ pub async fn recent_logs(
     RequireAdmin(_admin): RequireAdmin,
     State(state): State<AppState>,
     Query(q): Query<RecentLogsQuery>,
-) -> Json<Value> {
+) -> HomarrResult<Json<Value>> {
+    deny_in_read_only_demo(&state)?;
     let entries = state.logs.recent(q.limit.unwrap_or(200).clamp(1, 1000));
-    Json(json!({ "items": entries }))
+    Ok(Json(json!({ "items": entries })))
+}
+
+/// The demo admin login is public, so sensitive admin reads are blocked too, not just writes.
+fn deny_in_read_only_demo(state: &AppState) -> HomarrResult<()> {
+    if state.demo_read_only_active() {
+        return Err(HomarrError::Forbidden("Demo mode is read-only".into()));
+    }
+    Ok(())
 }
 
 pub async fn export_backup(
     RequireAdmin(_admin): RequireAdmin,
     State(state): State<AppState>,
 ) -> HomarrResult<Json<HomarrBackupBundle>> {
+    deny_in_read_only_demo(&state)?;
     let bundle = export_backup_json(&state.db).await?;
     Ok(Json(bundle))
 }
