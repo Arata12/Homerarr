@@ -6,7 +6,9 @@ pub use registry::{
     all_widget_metadata, get_widget_metadata, sanitize_widget_options, widget_option_fields,
     OptionChoice, OptionField, WidgetMetadata,
 };
-pub use render::{render_widget_html, render_widget_html_with_origin, safe_url};
+pub use render::{
+    render_widget_html, render_widget_html_with_origin, render_widget_markup, safe_url,
+};
 pub use resolver::WidgetResolver;
 
 #[cfg(test)]

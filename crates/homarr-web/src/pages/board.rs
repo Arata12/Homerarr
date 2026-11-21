@@ -12,7 +12,7 @@ use homarr_db::{
     repos::{boards, settings, users},
 };
 use homarr_definitions::{BoardPermission, WidgetKind};
-use homarr_widgets::render_widget_html_with_origin;
+use homarr_widgets::render_widget_markup;
 use maud::{html, Markup, PreEscaped};
 use serde_json::{json, Value};
 
@@ -603,13 +603,8 @@ async fn render_full_board(
         ) {
             obj.insert("title".into(), Value::String(title.to_string()));
         }
-        let rendered_card = render_widget_html_with_origin(
-            kind,
-            &item.id,
-            &options,
-            &data,
-            request_origin.as_deref(),
-        );
+        let rendered_card =
+            render_widget_markup(kind, &item.id, &options, &data, request_origin.as_deref());
 
         let mut extra_classes = String::new();
         for c in safe_css_classes(&item.advanced_options) {
@@ -637,9 +632,7 @@ async fn render_full_board(
                         }
                         div.item-resize-handle data-editor-resize title="Resize" {}
                     }
-                    // safe: rendered by homarr-widgets (escapes its own data)
-                    // shortcut: String wrapped as raw HTML, drop PreEscaped once render.rs returns Markup
-                    (PreEscaped(rendered_card))
+                    (rendered_card)
                 }
             },
         );

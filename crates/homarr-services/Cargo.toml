@@ -22,7 +22,6 @@ homarr-db.workspace = true
 homarr-definitions.workspace = true
 homarr-integrations.workspace = true
 homarr-redis.workspace = true
-html-escape.workspace = true
 quick-xml.workspace = true
 rand.workspace = true
 regex.workspace = true

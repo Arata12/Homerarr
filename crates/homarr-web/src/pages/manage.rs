@@ -10,8 +10,8 @@ use homarr_db::repos::{
     search_engines, users,
 };
 use homarr_definitions::{integration::all_integration_defs, WidgetKind};
-use homarr_widgets::{all_widget_metadata, get_widget_metadata, render_widget_html, safe_url};
-use maud::{html, Markup, PreEscaped};
+use homarr_widgets::{all_widget_metadata, get_widget_metadata, render_widget_markup, safe_url};
+use maud::{html, Markup};
 use serde_json::json;
 
 use super::manage_extra::integration_defs_map_json;
@@ -1245,12 +1245,11 @@ pub async fn widget_preview_page(
         .resolve_widget_data(kind, &meta.default_options, &[])
         .await
         .unwrap_or_else(|_| json!({}));
-    let card = render_widget_html(kind, "preview", &meta.default_options, &data);
+    let card = render_widget_markup(kind, "preview", &meta.default_options, &data, None);
 
     let body = html! {
         div.page-header { h1.page-title { "Widget Preview: " (meta.name) } }
-        // safe: render_widget_html escapes all widget data and options itself (tested in homarr-widgets).
-        div.grid-item.widget-preview-box { (PreEscaped(card)) }
+        div.grid-item.widget-preview-box { (card) }
         div.card style="margin-top:16px" {
             h3 style="margin-top:0" { "All 67 Widgets" }
             div style="display:flex;gap:6px;flex-wrap:wrap" {
