@@ -66,14 +66,13 @@ services:
       REDIS_IS_EXTERNAL: "true"
       REDIS_HOST: redis
       REDIS_PORT: "6379"
-      # Leave SECRET_ENCRYPTION_KEY / AUTH_SECRET unset (empty counts as unset) to let Homarr
-      # generate and persist them under /appdata/secrets, or set them (or *_FILE) yourself.
+      # Leave SECRET_ENCRYPTION_KEY unset (empty counts as unset) to let Homarr generate and
+      # persist it under /appdata/secrets, or set it (or SECRET_ENCRYPTION_KEY_FILE) yourself.
       # UPGRADE NOTE: older versions of this file defaulted SECRET_ENCRYPTION_KEY to the public
       # value 0123456789abcdef repeated 4 times. If your deployment started with that default, set
       # SECRET_ENCRYPTION_KEY to that old value to keep reading stored integration secrets, then
       # rotate to a new private key and re-enter the integration secrets.
       SECRET_ENCRYPTION_KEY: ${SECRET_ENCRYPTION_KEY:-}
-      AUTH_SECRET: ${AUTH_SECRET:-}
       DEMO_MODE: ${DEMO_MODE:-false}
       DEMO_READ_ONLY: ${DEMO_READ_ONLY:-true}
       UNSAFE_ENABLE_MOCK_INTEGRATION: ${UNSAFE_ENABLE_MOCK_INTEGRATION:-false}

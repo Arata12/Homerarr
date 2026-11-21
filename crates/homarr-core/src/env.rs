@@ -16,7 +16,6 @@ pub struct AppConfig {
     pub db_driver: DatabaseDriver,
     pub db_url: String,
     pub secret_encryption_key: String,
-    pub auth_secret: String,
     pub auth_cookie_prefix: String,
     /// Explicit `AUTH_COOKIE_SECURE` override for the session cookie `Secure` flag.
     pub auth_cookie_secure: Option<bool>,
@@ -95,10 +94,6 @@ fn parse_bool_opt(key: &str) -> Option<bool> {
 
 fn is_valid_hex_64(value: &str) -> bool {
     value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit())
-}
-
-fn is_non_empty(value: &str) -> bool {
-    !value.is_empty()
 }
 
 /// Loads a persisted secret from `<dir>/secrets/<file_name>`, generating and persisting a new one
@@ -288,13 +283,6 @@ impl AppConfig {
             )?,
         };
 
-        let auth_secret = match secret_env("AUTH_SECRET")? {
-            Some(secret) => secret,
-            None => {
-                load_or_create_secret(&static_data_dir, "auth_secret", "AUTH_SECRET", is_non_empty)?
-            }
-        };
-
         let host = non_empty_env("HOST").unwrap_or_else(|| "0.0.0.0".to_string());
         let port = non_empty_env("PORT")
             .and_then(|p| p.parse::<u16>().ok())
@@ -378,7 +366,6 @@ impl AppConfig {
             db_driver,
             db_url,
             secret_encryption_key,
-            auth_secret,
             auth_cookie_prefix: non_empty_env("AUTH_COOKIE_PREFIX")
                 .unwrap_or_else(|| "homarr".to_string()),
             auth_cookie_secure: parse_bool_opt("AUTH_COOKIE_SECURE"),
@@ -428,7 +415,6 @@ impl AppConfig {
             db_driver: DatabaseDriver::Sqlite,
             db_url: "sqlite::memory:".to_string(),
             secret_encryption_key: "0".repeat(64),
-            auth_secret: "1".repeat(64),
             auth_cookie_prefix: "homarr".to_string(),
             auth_cookie_secure: None,
             auth_providers: vec!["credentials".to_string()],
