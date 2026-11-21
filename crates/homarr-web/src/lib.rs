@@ -37,7 +37,7 @@ impl AuthContextProvider for WebState {
 /// CSP for every server-rendered page. Scripts only from `/static`; styles stay inline-friendly
 /// (style attributes, board/custom CSS); images, media and frames may come from any host because
 /// widgets embed user-configured URLs.
-pub const UI_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self';     style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:;     font-src 'self' data: https:; media-src 'self' blob: https: http:; connect-src 'self' ws: wss:;     frame-src 'self' https: http:; object-src 'none'; base-uri 'self'; form-action 'self';     frame-ancestors 'self'";
+pub const UI_CONTENT_SECURITY_POLICY: &str = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline' https:; img-src 'self' data: blob: https: http:; font-src 'self' data: https:; media-src 'self' blob: https: http:; connect-src 'self' ws: wss:; frame-src 'self' https: http:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'self'";
 
 async fn set_csp(mut res: Response) -> Response {
     res.headers_mut()
