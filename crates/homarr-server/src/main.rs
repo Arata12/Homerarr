@@ -15,7 +15,6 @@ use homarr_web::web_router;
 use hyper::server::conn::http1;
 use hyper_util::{
     rt::{TokioIo, TokioTimer},
-    server::graceful::GracefulShutdown,
     service::TowerToHyperService,
 };
 use tokio::net::TcpListener;
@@ -117,7 +116,10 @@ async fn serve(listener: TcpListener, app: Router) {
     builder
         .timer(TokioTimer::new())
         .header_read_timeout(HEADER_READ_TIMEOUT);
-    let graceful = GracefulShutdown::new();
+    // hyper-util's GracefulShutdown does not support http1 upgradeable connections, so do what
+    // `axum::serve` does: signal_tx fans out the shutdown, close_tx.closed() waits for all tasks.
+    let (signal_tx, signal_rx) = tokio::sync::watch::channel(());
+    let (close_tx, close_rx) = tokio::sync::watch::channel(());
     let shutdown = shutdown_signal();
     tokio::pin!(shutdown);
 
@@ -144,16 +146,29 @@ async fn serve(listener: TcpListener, app: Router) {
                 TowerToHyperService::new(tower_service),
             )
             .with_upgrades();
-        let conn = graceful.watch(conn);
+        let mut signal_rx = signal_rx.clone();
+        let close_rx = close_rx.clone();
         tokio::spawn(async move {
-            if let Err(err) = conn.await {
+            let mut conn = std::pin::pin!(conn);
+            let res = tokio::select! {
+                res = conn.as_mut() => res,
+                _ = signal_rx.changed() => {
+                    conn.as_mut().graceful_shutdown();
+                    conn.await
+                }
+            };
+            if let Err(err) = res {
                 tracing::debug!(error = %err, "Connection closed with error");
             }
+            drop(close_rx);
         });
     }
 
     drop(listener);
-    if tokio::time::timeout(SHUTDOWN_GRACE, graceful.shutdown())
+    drop(signal_rx);
+    drop(signal_tx);
+    drop(close_rx);
+    if tokio::time::timeout(SHUTDOWN_GRACE, close_tx.closed())
         .await
         .is_err()
     {
