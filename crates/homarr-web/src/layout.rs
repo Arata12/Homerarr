@@ -10,7 +10,6 @@ use serde_json::{json, Value};
 
 use crate::i18n::I18nCatalog;
 use crate::icons::{self, icon};
-use crate::pages::board_editor::script_json;
 
 pub struct ServerUiSettings {
     pub app_name: String,
@@ -352,6 +351,17 @@ pub(crate) fn urlencoding(raw: &str) -> String {
         }
     }
     out
+}
+
+/// JSON safe to embed in an inline `<script>`.
+pub fn script_json(value: &Value) -> String {
+    serde_json::to_string(value)
+        .unwrap_or_else(|_| "null".to_string())
+        .replace('<', "\\u003c")
+        .replace('>', "\\u003e")
+        .replace('&', "\\u0026")
+        .replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029")
 }
 
 /// Wraps a pre-rendered HTML string as a page body.

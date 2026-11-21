@@ -11,11 +11,13 @@ use homarr_db::{
 };
 use homarr_definitions::IntegrationPermission;
 use homarr_widgets::{all_widget_metadata, widget_option_fields};
-use html_escape::{encode_double_quoted_attribute as encode_attr, encode_text};
+use maud::{html, Markup};
 use serde_json::{json, Map, Value};
 
 use crate::i18n::I18nCatalog;
-use crate::icons;
+use crate::icons::{self, icon};
+// Re-exported for pages that still import it from here.
+pub use crate::layout::script_json;
 use crate::layout::urlencoding;
 
 pub const MAX_ITEM_HEIGHT: i32 = 32;
@@ -323,17 +325,6 @@ pub fn cell_style(cells: &[Cell]) -> String {
         ));
     }
     s
-}
-
-/// JSON safe to embed in an inline `<script>`.
-pub fn script_json(value: &Value) -> String {
-    serde_json::to_string(value)
-        .unwrap_or_else(|_| "null".to_string())
-        .replace('<', "\\u003c")
-        .replace('>', "\\u003e")
-        .replace('&', "\\u0026")
-        .replace('\u{2028}', "\\u2028")
-        .replace('\u{2029}', "\\u2029")
 }
 
 fn humanize(key: &str) -> String {
@@ -647,39 +638,48 @@ pub fn editor_blob(
 }
 
 /// Edit-mode toolbar shown above the board.
+pub fn edit_bar(board_name: &str, strings: &Value) -> Markup {
+    let s = |k: &str| {
+        strings
+            .get(k)
+            .and_then(Value::as_str)
+            .unwrap_or(k)
+            .to_string()
+    };
+    let editing_layout = s("editingLayout");
+    html! {
+        div.edit-mode-bar {
+            div.edit-mode-bar-left {
+                span.edit-dot {}
+                strong { "Editing: " (board_name) }
+                span #editor-save-status.editor-save-status.muted role="status" aria-live="polite" {}
+            }
+            div.edit-mode-bar-actions {
+                label.editor-layout-picker {
+                    (editing_layout)
+                    select #editor-layout-select aria-label=(editing_layout) {}
+                }
+                button.btn.btn-primary.btn-sm type="button" data-editor-action="add-widget" {
+                    (icon(icons::PLUS)) span { (s("addWidget")) }
+                }
+                button.btn.btn-sm type="button" data-editor-action="add-section" {
+                    (icon(icons::PLUS)) span { (s("addSection")) }
+                }
+                button.btn.btn-sm type="button" data-editor-action="layouts" { (s("layouts")) }
+                a.btn.btn-sm href={ "/boards/" (urlencoding(board_name)) "/settings" } {
+                    (icon(icons::SETTINGS)) span { "Board Settings" }
+                }
+                button.btn.btn-sm type="button" data-editor-action="exit" {
+                    (icon(icons::CHECK)) span { "Done" }
+                }
+            }
+        }
+    }
+}
+
+// shortcut: String form for board.rs until it is ported to Maud, then drop this.
 pub fn edit_bar_html(board_name: &str, strings: &Value) -> String {
-    let s = |k: &str| encode_text(strings.get(k).and_then(Value::as_str).unwrap_or(k)).to_string();
-    let s_attr =
-        |k: &str| encode_attr(strings.get(k).and_then(Value::as_str).unwrap_or(k)).to_string();
-    format!(
-        r#"<div class="edit-mode-bar">
-  <div class="edit-mode-bar-left">
-    <span class="edit-dot"></span>
-    <strong>Editing: {board_name}</strong>
-    <span id="editor-save-status" class="editor-save-status muted" role="status" aria-live="polite"></span>
-  </div>
-  <div class="edit-mode-bar-actions">
-    <label class="editor-layout-picker">{editing_layout}
-      <select id="editor-layout-select" aria-label="{editing_layout_attr}"></select>
-    </label>
-    <button type="button" class="btn btn-primary btn-sm" data-editor-action="add-widget">{plus}<span>{add_widget}</span></button>
-    <button type="button" class="btn btn-sm" data-editor-action="add-section">{plus}<span>{add_section}</span></button>
-    <button type="button" class="btn btn-sm" data-editor-action="layouts">{layouts_label}</button>
-    <a class="btn btn-sm" href="/boards/{board_url}/settings">{gear}<span>Board Settings</span></a>
-    <button type="button" class="btn btn-sm" data-editor-action="exit">{check}<span>Done</span></button>
-  </div>
-</div>"#,
-        board_name = encode_text(board_name),
-        board_url = encode_attr(&urlencoding(board_name)),
-        editing_layout = s("editingLayout"),
-        editing_layout_attr = s_attr("editingLayout"),
-        add_widget = s("addWidget"),
-        add_section = s("addSection"),
-        layouts_label = s("layouts"),
-        plus = icons::PLUS,
-        gear = icons::SETTINGS,
-        check = icons::CHECK,
-    )
+    edit_bar(board_name, strings).into_string()
 }
 
 #[cfg(test)]
@@ -757,5 +757,14 @@ mod tests {
         assert_eq!(cell("a", 0).2, 2);
         assert!(!out["a"].cells[0].real && out["a"].cells[1].real);
         assert!(out.contains_key("x") && out.contains_key("y"));
+    }
+
+    #[test]
+    fn edit_bar_escapes_board_name() {
+        let html = edit_bar_html(r#"<b>"x"&"#, &json!({ "editingLayout": "<i>" }));
+        assert!(html.contains("Editing: &lt;b&gt;&quot;x&quot;&amp;</strong>"));
+        assert!(html.contains(r#"aria-label="&lt;i&gt;""#));
+        assert!(html.contains(r#"href="/boards/%3Cb%3E%22x%22%26/settings""#));
+        assert!(!html.contains("<b>") && !html.contains("<i>"));
     }
 }
