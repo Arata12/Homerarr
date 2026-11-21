@@ -57,7 +57,6 @@ bytes = "1"
 url = { version = "2", features = ["serde"] }
 regex = "1"
 quick-xml = "0.37"
-html-escape = "0.2"
 maud = { version = "0.27", features = ["axum"] }
 
 homarr-common = { path = "crates/homarr-common" }

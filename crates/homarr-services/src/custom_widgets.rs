@@ -466,7 +466,7 @@ pub fn render_template(template: &str, data: &Value, options: &HashMap<String, V
         } else {
             raw
         };
-        html_escape::encode_quoted_attribute(&raw).into_owned()
+        escape_quoted_attribute(&raw)
     };
     let re = Regex::new(r"\{\{\s*([a-zA-Z0-9_.-]+)\s*\}\}").expect("valid placeholder regex");
     re.replace_all(template, |caps: &regex::Captures<'_>| {
@@ -526,6 +526,23 @@ fn value_to_string(v: &Value) -> String {
         Value::String(s) => s.clone(),
         other => other.to_string(),
     }
+}
+
+/// Escapes `&`, `<`, `>`, `"` and `'` so a value is safe inside a single- or double-quoted
+/// HTML attribute as well as in text content.
+fn escape_quoted_attribute(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    for c in raw.chars() {
+        match c {
+            '&' => out.push_str("&amp;"),
+            '<' => out.push_str("&lt;"),
+            '>' => out.push_str("&gt;"),
+            '"' => out.push_str("&quot;"),
+            '\'' => out.push_str("&#x27;"),
+            _ => out.push(c),
+        }
+    }
+    out
 }
 
 #[cfg(test)]

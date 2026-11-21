@@ -228,8 +228,19 @@ pub fn render_widget_html_with_origin(
     data: &Value,
     self_origin: Option<&str>,
 ) -> String {
-    // shortcut: returns String for the homarr-web / homarr-api callers, return Markup once they are migrated.
-    render_widget(kind, item_id, options, data, self_origin).into_string()
+    render_widget_markup(kind, item_id, options, data, self_origin).into_string()
+}
+
+/// Same as [`render_widget_html_with_origin`], returned as Maud `Markup` for embedding in
+/// server-rendered pages without a raw-HTML wrapper.
+pub fn render_widget_markup(
+    kind: WidgetKind,
+    item_id: &str,
+    options: &Value,
+    data: &Value,
+    self_origin: Option<&str>,
+) -> Markup {
+    render_widget(kind, item_id, options, data, self_origin)
 }
 
 fn render_widget(
