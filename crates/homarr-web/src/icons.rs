@@ -1,3 +1,5 @@
+use maud::PreEscaped;
+
 macro_rules! tabler_svg {
     ($body:literal) => {
         concat!(
@@ -122,3 +124,9 @@ pub const MENU: &str =
     tabler_svg!(r#"<path d="M4 6l16 0" /><path d="M4 12l16 0" /><path d="M4 18l16 0" />"#);
 pub const ARROW_UP_RIGHT: &str =
     tabler_svg!(r#"<path d="M17 7l-10 10" /><path d="M8 7l9 0l0 9" />"#);
+
+/// Renders one of the constant SVG icons above inside `html!`.
+pub fn icon(svg: &'static str) -> PreEscaped<&'static str> {
+    // Safe raw HTML: only compile-time constants from this module can be passed.
+    PreEscaped(svg)
+}

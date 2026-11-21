@@ -22,7 +22,7 @@ use super::board_editor::{
 };
 use crate::icons;
 use crate::layout::{
-    build_spotlight_items, render_page, urlencoding, PageContext, ServerUiSettings,
+    build_spotlight_items, legacy_body, render_page, urlencoding, PageContext, ServerUiSettings,
 };
 use crate::WebState;
 
@@ -82,7 +82,7 @@ pub async fn home_page(
             demo_read_only: state.config.demo_read_only,
             boards: &visible,
             spotlight_items: &spotlight,
-            ..PageContext::minimal("Home", body, &locale, &web.i18n)
+            ..PageContext::minimal("Home", legacy_body(body), &locale, &web.i18n)
         };
         ui.apply(&mut ctx);
         return Html(render_page(ctx)).into_response();
@@ -133,7 +133,7 @@ pub async fn boards_index_page(
         demo_mode: state.config.demo_mode,
         demo_read_only: state.config.demo_read_only,
         boards: &visible,
-        ..PageContext::minimal("Boards", body, &locale, &web.i18n)
+        ..PageContext::minimal("Boards", legacy_body(body), &locale, &web.i18n)
     };
     ui.apply(&mut ctx);
     Html(render_page(ctx)).into_response()
@@ -305,7 +305,7 @@ pub async fn board_settings_page(
         boards: &visible,
         active_board_name: Some(&b.name),
         spotlight_items: &spotlight,
-        ..PageContext::minimal("Board Settings", &body, &locale, &web.i18n)
+        ..PageContext::minimal("Board Settings", legacy_body(&body), &locale, &web.i18n)
     };
     ui.apply(&mut ctx);
     Html(render_page(ctx)).into_response()
@@ -852,7 +852,7 @@ async fn render_full_board(
     let spotlight = build_spotlight_items(state, visible_boards, is_admin, can_edit).await;
     let mut ctx = PageContext {
         title: page_title,
-        body: &body,
+        body: legacy_body(&body),
         session,
         demo_mode: state.config.demo_mode,
         demo_read_only: state.config.demo_read_only,

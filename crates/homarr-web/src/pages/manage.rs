@@ -17,7 +17,9 @@ use super::board_editor::script_json;
 use super::manage_extra::integration_defs_map_json;
 pub use super::manage_extra::{api_reference_page, search_engines_page, settings_page};
 use crate::icons;
-use crate::layout::{build_spotlight_items, render_page, PageContext, ServerUiSettings};
+use crate::layout::{
+    build_spotlight_items, legacy_body, render_page, PageContext, ServerUiSettings,
+};
 use crate::WebState;
 
 struct NavGroup {
@@ -138,7 +140,7 @@ pub(super) async fn render_manage_shell(
         demo_read_only: state.config.demo_read_only,
         boards: &visible_boards,
         spotlight_items: &spotlight,
-        ..PageContext::minimal(title, &full_body, &locale, &web.i18n)
+        ..PageContext::minimal(title, legacy_body(&full_body), &locale, &web.i18n)
     };
     ui.apply(&mut ctx);
     Html(render_page(ctx))
@@ -1250,7 +1252,7 @@ pub async fn widget_preview_page(
         demo_read_only: state.config.demo_read_only,
         boards: &visible,
         spotlight_items: &spotlight,
-        ..PageContext::minimal(&meta.name, &body, &locale, &web.i18n)
+        ..PageContext::minimal(&meta.name, legacy_body(&body), &locale, &web.i18n)
     };
     ui.apply(&mut ctx);
     Html(render_page(ctx)).into_response()

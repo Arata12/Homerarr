@@ -15,7 +15,9 @@ use html_escape::{encode_double_quoted_attribute as encode_attr, encode_text};
 use serde_json::{json, Map, Value};
 
 use super::manage::{empty_table_row, render_manage_shell, require_admin_or_redirect};
-use crate::layout::{build_spotlight_items, render_page, PageContext, ServerUiSettings};
+use crate::layout::{
+    build_spotlight_items, legacy_body, render_page, PageContext, ServerUiSettings,
+};
 use crate::WebState;
 
 fn secret_kind_label(kind: IntegrationSecretKind) -> &'static str {
@@ -513,7 +515,7 @@ pub async fn api_reference_page(
         demo_read_only: state.config.demo_read_only,
         boards: &visible,
         spotlight_items: &spotlight,
-        ..PageContext::minimal("API Reference", &content, &locale, &web.i18n)
+        ..PageContext::minimal("API Reference", legacy_body(&content), &locale, &web.i18n)
     };
     ui.apply(&mut ctx);
     Html(render_page(ctx)).into_response()

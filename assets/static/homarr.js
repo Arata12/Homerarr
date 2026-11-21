@@ -88,6 +88,16 @@
   const spotResults = document.getElementById("spotlight-results");
   let spotIndex = 0;
   let spotCategory = "all";
+  let spotItems = null;
+
+  function readSpotlightItems() {
+    const el = document.getElementById("homarr-spotlight-data");
+    try {
+      return el ? JSON.parse(el.textContent) : [];
+    } catch (_) {
+      return [];
+    }
+  }
 
   document.querySelectorAll(".spotlight-tab[data-spotlight-cat]").forEach((tab) => {
     tab.addEventListener("click", function () {
@@ -129,7 +139,7 @@
   function renderSpotlight(query) {
     if (!spotResults) return;
     const q = (query || "").trim().toLowerCase();
-    const raw = window.__HOMARR_SPOTLIGHT__ || [];
+    const raw = spotItems || (spotItems = readSpotlightItems());
     const filtered = raw
       .filter((item) => {
         const catOk = spotCategory === "all" || item.category === spotCategory;
