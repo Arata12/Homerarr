@@ -1594,6 +1594,7 @@ mod tests {
 
     fn ctx(url: &str, external: Option<&str>, secrets: &[(&str, &str)]) -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "w".into(),
             name: "Wazuh".into(),
             url: url.into(),

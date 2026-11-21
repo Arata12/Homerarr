@@ -1,3 +1,4 @@
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -80,7 +81,8 @@ macro_rules! capability {
     ($name:ident, $label:literal, $method:ident($($arg:ident: $ty:ty),* $(,)?) -> $ret:ty) => {
         pub async fn $name(&self, ctx: &IntegrationContext $(, $arg: $ty)*) -> HomarrResult<$ret> {
             let group = group_of(ctx, $label)?;
-            resolved(ctx, $label, group.$method(&self.rt, ctx $(, $arg)*).await)
+            let this = self.for_ctx(ctx);
+            resolved(ctx, $label, group.$method(&this.rt, ctx $(, $arg)*).await)
         }
     };
 }
@@ -109,16 +111,28 @@ impl IntegrationRegistry {
         &self.rt
     }
 
+    /// Registry for one call: integrations saved by non-admins only get the guarded HTTP client
+    /// (no redirects, blocked addresses filtered at connect time).
+    fn for_ctx(&self, ctx: &IntegrationContext) -> Cow<'_, Self> {
+        if !ctx.restricted {
+            return Cow::Borrowed(self);
+        }
+        let mut scoped = self.clone();
+        scoped.rt.http = scoped.rt.http.restricted();
+        Cow::Owned(scoped)
+    }
+
     pub fn resolve_http_auth(&self, ctx: &IntegrationContext) -> HomarrResult<ResolvedHttpAuth> {
         resolve_declared_http_auth(ctx)
     }
 
     pub async fn test_connection(&self, ctx: &IntegrationContext) -> TestConnectionResponse {
+        let this = self.for_ctx(ctx);
         let res = match group_of(ctx, "test connection") {
             Ok(group) => resolved(
                 ctx,
                 "test connection",
-                group.test_connection(&self.rt, ctx).await,
+                group.test_connection(&this.rt, ctx).await,
             ),
             Err(err) => Err(err),
         };
@@ -151,7 +165,8 @@ impl IntegrationRegistry {
             )));
         }
 
-        let auth = crate::http_auth::resolve_http_auth(&self.rt, ctx).await?;
+        let this = self.for_ctx(ctx);
+        let auth = crate::http_auth::resolve_http_auth(&this.rt, ctx).await?;
         // Upstream responses (e.g. Sonarr's /config/host) can echo the integration's credentials.
         let redactor = SecretRedactor::new(ctx, &auth);
         let mut query = auth.query;
@@ -164,7 +179,7 @@ impl IntegrationRegistry {
         let req_method = Method::from_bytes(method.trim().to_ascii_uppercase().as_bytes())
             .map_err(|_| HomarrError::BadRequest(format!("Invalid HTTP method: {method}")))?;
 
-        let mut req = self.rt.http.standard().request(req_method, url);
+        let mut req = this.rt.http.standard().request(req_method, url);
         if let Some(eh) = extra_headers {
             for (k, v) in eh {
                 req = req.header(k, v);
@@ -208,11 +223,12 @@ impl IntegrationRegistry {
         end: Option<&str>,
     ) -> HomarrResult<Vec<CalendarEvent>> {
         let group = group_of(ctx, "calendar")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "calendar",
             group
-                .legacy_calendar_events(&self.rt, ctx, start, end)
+                .legacy_calendar_events(&this.rt, ctx, start, end)
                 .await,
         )
     }
@@ -222,10 +238,11 @@ impl IntegrationRegistry {
         ctx: &IntegrationContext,
     ) -> HomarrResult<DnsHoleSummary> {
         let group = group_of(ctx, "DNS hole summary")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "DNS hole summary",
-            group.legacy_dns_hole_summary(&self.rt, ctx).await,
+            group.legacy_dns_hole_summary(&this.rt, ctx).await,
         )
     }
 
@@ -235,11 +252,12 @@ impl IntegrationRegistry {
         enabled: bool,
     ) -> HomarrResult<()> {
         let group = group_of(ctx, "DNS hole control")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "DNS hole control",
             group
-                .legacy_dns_hole_set_enabled(&self.rt, ctx, enabled)
+                .legacy_dns_hole_set_enabled(&this.rt, ctx, enabled)
                 .await,
         )
     }
@@ -249,10 +267,11 @@ impl IntegrationRegistry {
         ctx: &IntegrationContext,
     ) -> HomarrResult<DownloadClientQueue> {
         let group = group_of(ctx, "downloads")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "downloads",
-            group.legacy_downloads(&self.rt, ctx).await,
+            group.legacy_downloads(&this.rt, ctx).await,
         )
     }
 
@@ -261,10 +280,11 @@ impl IntegrationRegistry {
         ctx: &IntegrationContext,
     ) -> HomarrResult<Vec<MediaServerSession>> {
         let group = group_of(ctx, "media server sessions")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "media server sessions",
-            group.legacy_media_sessions(&self.rt, ctx).await,
+            group.legacy_media_sessions(&this.rt, ctx).await,
         )
     }
 
@@ -273,10 +293,11 @@ impl IntegrationRegistry {
         ctx: &IntegrationContext,
     ) -> HomarrResult<(Vec<MediaRequestItem>, MediaRequestStats)> {
         let group = group_of(ctx, "media requests")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "media requests",
-            group.legacy_media_requests(&self.rt, ctx).await,
+            group.legacy_media_requests(&this.rt, ctx).await,
         )
     }
 
@@ -287,11 +308,12 @@ impl IntegrationRegistry {
         approve: bool,
     ) -> HomarrResult<()> {
         let group = group_of(ctx, "media requests")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "media requests",
             group
-                .legacy_media_request_action(&self.rt, ctx, request_id, approve)
+                .legacy_media_request_action(&this.rt, ctx, request_id, approve)
                 .await,
         )
     }
@@ -301,10 +323,11 @@ impl IntegrationRegistry {
         ctx: &IntegrationContext,
     ) -> HomarrResult<HealthMonitoringInfo> {
         let group = group_of(ctx, "health monitoring")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "health monitoring",
-            group.legacy_health_monitoring(&self.rt, ctx).await,
+            group.legacy_health_monitoring(&this.rt, ctx).await,
         )
     }
 
@@ -313,10 +336,11 @@ impl IntegrationRegistry {
         ctx: &IntegrationContext,
     ) -> HomarrResult<Vec<SmartHomeEntity>> {
         let group = group_of(ctx, "smart home")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "smart home",
-            group.legacy_smart_home_entities(&self.rt, ctx).await,
+            group.legacy_smart_home_entities(&this.rt, ctx).await,
         )
     }
 
@@ -327,11 +351,12 @@ impl IntegrationRegistry {
         service: &str,
     ) -> HomarrResult<()> {
         let group = group_of(ctx, "smart home")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "smart home",
             group
-                .legacy_smart_home_action(&self.rt, ctx, entity_id, service)
+                .legacy_smart_home_action(&this.rt, ctx, entity_id, service)
                 .await,
         )
     }
@@ -341,19 +366,21 @@ impl IntegrationRegistry {
         ctx: &IntegrationContext,
     ) -> HomarrResult<Vec<NotificationItem>> {
         let group = group_of(ctx, "notifications")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "notifications",
-            group.legacy_notifications(&self.rt, ctx).await,
+            group.legacy_notifications(&this.rt, ctx).await,
         )
     }
 
     pub async fn get_indexers(&self, ctx: &IntegrationContext) -> HomarrResult<Vec<IndexerInfo>> {
         let group = group_of(ctx, "indexer manager")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "indexer manager",
-            group.legacy_indexers(&self.rt, ctx).await,
+            group.legacy_indexers(&this.rt, ctx).await,
         )
     }
 
@@ -362,10 +389,11 @@ impl IntegrationRegistry {
         ctx: &IntegrationContext,
     ) -> HomarrResult<Vec<MediaOrganizerItem>> {
         let group = group_of(ctx, "media organizer")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "media organizer",
-            group.legacy_media_missing(&self.rt, ctx).await,
+            group.legacy_media_missing(&this.rt, ctx).await,
         )
     }
 
@@ -374,19 +402,21 @@ impl IntegrationRegistry {
         ctx: &IntegrationContext,
     ) -> HomarrResult<MediaTranscodingSummary> {
         let group = group_of(ctx, "media transcoding")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "media transcoding",
-            group.legacy_media_transcoding(&self.rt, ctx).await,
+            group.legacy_media_transcoding(&this.rt, ctx).await,
         )
     }
 
     pub async fn get_ups_summary(&self, ctx: &IntegrationContext) -> HomarrResult<Vec<UpsSummary>> {
         let group = group_of(ctx, "UPS summary")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "UPS summary",
-            group.legacy_ups_summary(&self.rt, ctx).await,
+            group.legacy_ups_summary(&this.rt, ctx).await,
         )
     }
 
@@ -395,16 +425,18 @@ impl IntegrationRegistry {
         ctx: &IntegrationContext,
     ) -> HomarrResult<Option<String>> {
         let group = group_of(ctx, "service version")?;
+        let this = self.for_ctx(ctx);
         resolved(
             ctx,
             "service version",
-            group.legacy_service_version(&self.rt, ctx).await,
+            group.legacy_service_version(&this.rt, ctx).await,
         )
     }
 
     pub async fn get_stats(&self, ctx: &IntegrationContext) -> HomarrResult<StatsResponse> {
         let group = group_of(ctx, "stats")?;
-        if let Some(result) = group.stats(&self.rt, ctx).await {
+        let this = self.for_ctx(ctx);
+        if let Some(result) = group.stats(&this.rt, ctx).await {
             let values = result?;
             let metrics = group.stats_metrics(ctx.kind);
             if !metrics.is_empty() {
@@ -413,10 +445,10 @@ impl IntegrationRegistry {
                 ));
             }
         }
-        match group.legacy_stats(&self.rt, ctx).await {
+        match group.legacy_stats(&this.rt, ctx).await {
             Some(result) => result,
             // The legacy generic probe works for any kind, not only the ones the stats group owns.
-            None => crate::groups::stats::legacy_fetch_any(&self.rt, ctx).await,
+            None => crate::groups::stats::legacy_fetch_any(&this.rt, ctx).await,
         }
     }
 

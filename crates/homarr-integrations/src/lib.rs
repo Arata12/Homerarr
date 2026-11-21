@@ -27,6 +27,7 @@ mod tests {
         let registry = IntegrationRegistry::new(http);
 
         let mock_ctx = IntegrationContext {
+            restricted: false,
             id: "mock1".into(),
             name: "Mock".into(),
             url: "http://mock.local".into(),
@@ -59,6 +60,7 @@ mod tests {
                 }
             }
             let ctx = IntegrationContext {
+                restricted: false,
                 id: "id".into(),
                 name: def.name.into(),
                 url: "http://127.0.0.1:8080".into(),

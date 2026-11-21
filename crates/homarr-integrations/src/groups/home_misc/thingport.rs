@@ -528,6 +528,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "t".into(),
             name: "Thingport".into(),
             url: "http://thingport.local".into(),

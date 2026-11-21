@@ -352,6 +352,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "i".into(),
             name: "Jellyfin".into(),
             url: "http://jf:8096".into(),

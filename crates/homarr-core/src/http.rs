@@ -96,6 +96,8 @@ pub struct HttpClientFactory {
     clients: Arc<RwLock<Clients>>,
     ping: Client,
     certs: CertificateManager,
+    /// Set by [`restricted`](Self::restricted): every client accessor returns the guarded client.
+    restricted: bool,
 }
 
 impl HttpClientFactory {
@@ -128,6 +130,7 @@ impl HttpClientFactory {
             clients: Arc::new(RwLock::new(clients)),
             ping,
             certs: certs.clone(),
+            restricted: false,
         })
     }
 
@@ -143,11 +146,26 @@ impl HttpClientFactory {
         self.clients.read().unwrap_or_else(PoisonError::into_inner)
     }
 
+    /// Copy whose `standard()` and `no_redirect()` hand out the guarded client, for callers
+    /// that fetch URLs a non-admin chose.
+    pub fn restricted(&self) -> Self {
+        Self {
+            restricted: true,
+            ..self.clone()
+        }
+    }
+
     pub fn standard(&self) -> Client {
+        if self.restricted {
+            return self.guarded();
+        }
         self.current().standard.clone()
     }
 
     pub fn no_redirect(&self) -> Client {
+        if self.restricted {
+            return self.guarded();
+        }
         self.current().no_redirect.clone()
     }
 
@@ -308,5 +326,21 @@ mod tests {
         let clone = factory.clone();
         clone.reload().unwrap();
         assert!(Arc::ptr_eq(&factory.clients, &clone.clients));
+    }
+
+    #[tokio::test]
+    async fn restricted_factory_blocks_loopback_hostnames() {
+        let certs = CertificateManager::new("./test-certs-nonexistent".into());
+        let factory = HttpClientFactory::new(&certs).unwrap().restricted();
+        for client in [factory.standard(), factory.no_redirect()] {
+            let err = client.get("http://localhost:9/").send().await.unwrap_err();
+            let mut chain = err.to_string();
+            let mut source = std::error::Error::source(&err);
+            while let Some(inner) = source {
+                chain.push_str(&format!(": {inner}"));
+                source = inner.source();
+            }
+            assert!(chain.contains("blocked addresses"), "{chain}");
+        }
     }
 }

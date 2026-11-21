@@ -163,6 +163,7 @@ impl CustomWidgetService {
                 external_url: integration.external_url,
                 kind,
                 secrets: int_secrets,
+                restricted: integration.restricted,
             };
             let resp = integrations
                 .execute_http_request(&ctx, method, &path, None, None, None)

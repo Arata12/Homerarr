@@ -497,6 +497,7 @@ impl WidgetResolver {
                     external_url: rec.external_url,
                     kind,
                     secrets,
+                    restricted: rec.restricted,
                 });
             }
         }

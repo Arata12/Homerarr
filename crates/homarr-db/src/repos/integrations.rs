@@ -18,6 +18,7 @@ pub struct IntegrationInput {
     pub external_url: Option<String>,
     pub kind: String,
     pub app_id: Option<String>,
+    pub restricted: bool,
 }
 
 pub async fn create(
@@ -32,8 +33,8 @@ pub async fn create(
         Database::Sqlite(pool) => {
             let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
             sqlx::query(
-                r#"INSERT INTO "integration" ("id", "name", "url", "external_url", "kind", "app_id")
-                   VALUES (?, ?, ?, ?, ?, ?)"#,
+                r#"INSERT INTO "integration" ("id", "name", "url", "external_url", "kind", "app_id", "restricted")
+                   VALUES (?, ?, ?, ?, ?, ?, ?)"#,
             )
             .bind(&id)
             .bind(&input.name)
@@ -41,6 +42,7 @@ pub async fn create(
             .bind(&input.external_url)
             .bind(&input.kind)
             .bind(&input.app_id)
+            .bind(input.restricted)
             .execute(&mut *tx)
             .await
             .map_err(map_sqlx_err)?;
@@ -63,8 +65,8 @@ pub async fn create(
         Database::Postgres(pool) => {
             let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
             sqlx::query(
-                r#"INSERT INTO "integration" ("id", "name", "url", "external_url", "kind", "app_id")
-                   VALUES ($1, $2, $3, $4, $5, $6)"#,
+                r#"INSERT INTO "integration" ("id", "name", "url", "external_url", "kind", "app_id", "restricted")
+                   VALUES ($1, $2, $3, $4, $5, $6, $7)"#,
             )
             .bind(&id)
             .bind(&input.name)
@@ -72,6 +74,7 @@ pub async fn create(
             .bind(&input.external_url)
             .bind(&input.kind)
             .bind(&input.app_id)
+            .bind(input.restricted)
             .execute(&mut *tx)
             .await
             .map_err(map_sqlx_err)?;
@@ -101,6 +104,7 @@ pub async fn create(
         external_url: input.external_url,
         kind: input.kind,
         app_id: input.app_id,
+        restricted: input.restricted,
         secret_kinds: encrypted_secrets.iter().map(|(k, _)| k.clone()).collect(),
     })
 }
@@ -121,6 +125,7 @@ pub async fn list_all(db: &Database) -> HomarrResult<Vec<IntegrationRecord>> {
                         external_url: r.try_get("external_url")?,
                         kind: r.try_get("kind")?,
                         app_id: r.try_get("app_id")?,
+                        restricted: r.try_get("restricted")?,
                         secret_kinds: Vec::new(),
                     })
                 })
@@ -141,6 +146,7 @@ pub async fn list_all(db: &Database) -> HomarrResult<Vec<IntegrationRecord>> {
                         external_url: r.try_get("external_url")?,
                         kind: r.try_get("kind")?,
                         app_id: r.try_get("app_id")?,
+                        restricted: r.try_get("restricted")?,
                         secret_kinds: Vec::new(),
                     })
                 })
@@ -199,6 +205,7 @@ pub async fn get_by_id(db: &Database, id: &str) -> HomarrResult<Option<Integrati
                     external_url: r.try_get("external_url")?,
                     kind: r.try_get("kind")?,
                     app_id: r.try_get("app_id")?,
+                    restricted: r.try_get("restricted")?,
                     secret_kinds: Vec::new(),
                 })
             })
@@ -219,6 +226,7 @@ pub async fn get_by_id(db: &Database, id: &str) -> HomarrResult<Option<Integrati
                     external_url: r.try_get("external_url")?,
                     kind: r.try_get("kind")?,
                     app_id: r.try_get("app_id")?,
+                    restricted: r.try_get("restricted")?,
                     secret_kinds: Vec::new(),
                 })
             })
@@ -282,6 +290,7 @@ pub async fn get_secrets(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 pub async fn update(
     db: &Database,
     id: &str,
@@ -289,6 +298,7 @@ pub async fn update(
     url: &str,
     external_url: Option<&str>,
     app_id: Option<&str>,
+    restricted: bool,
     replace_secrets: Option<&[(String, String)]>,
 ) -> HomarrResult<IntegrationRecord> {
     let now = Utc::now().timestamp();
@@ -296,12 +306,13 @@ pub async fn update(
         Database::Sqlite(pool) => {
             let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
             let res = sqlx::query(
-                r#"UPDATE "integration" SET "name" = ?, "url" = ?, "external_url" = ?, "app_id" = ? WHERE "id" = ?"#,
+                r#"UPDATE "integration" SET "name" = ?, "url" = ?, "external_url" = ?, "app_id" = ?, "restricted" = ? WHERE "id" = ?"#,
             )
             .bind(name)
             .bind(url)
             .bind(external_url)
             .bind(app_id)
+            .bind(restricted)
             .bind(id)
             .execute(&mut *tx)
             .await
@@ -330,12 +341,13 @@ pub async fn update(
         Database::Postgres(pool) => {
             let mut tx = pool.begin().await.map_err(map_sqlx_err)?;
             let res = sqlx::query(
-                r#"UPDATE "integration" SET "name" = $1, "url" = $2, "external_url" = $3, "app_id" = $4 WHERE "id" = $5"#,
+                r#"UPDATE "integration" SET "name" = $1, "url" = $2, "external_url" = $3, "app_id" = $4, "restricted" = $5 WHERE "id" = $6"#,
             )
             .bind(name)
             .bind(url)
             .bind(external_url)
             .bind(app_id)
+            .bind(restricted)
             .bind(id)
             .execute(&mut *tx)
             .await

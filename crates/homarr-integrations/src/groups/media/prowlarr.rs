@@ -97,6 +97,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "i".into(),
             name: "Prowlarr".into(),
             url: "http://p".into(),

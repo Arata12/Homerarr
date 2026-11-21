@@ -203,6 +203,7 @@ pub async fn seed_demo(db: &Database, _crypto: &SecretCrypto) -> HomarrResult<()
                     external_url: None,
                     kind: "mock".to_string(),
                     app_id: None,
+                    restricted: false,
                 },
                 &[],
             )

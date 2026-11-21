@@ -372,6 +372,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "l".into(),
             name: "llama".into(),
             url: "http://llama".into(),

@@ -156,6 +156,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "i".into(),
             name: "Sonarr".into(),
             url: "http://sonarr.local:8989".into(),

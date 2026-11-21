@@ -205,6 +205,7 @@ mod tests {
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
+            restricted: false,
             id: "u".into(),
             name: "Unraid".into(),
             url: "http://unraid".into(),
