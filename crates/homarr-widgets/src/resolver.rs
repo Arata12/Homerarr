@@ -3,12 +3,16 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use chrono::Utc;
+use futures_util::future::join_all;
 use homarr_common::{HomarrResult, SecretCrypto};
 use homarr_db::{
     repos::{apps, custom_widgets as cw_repo, integrations as int_repo},
     Database,
 };
 use homarr_definitions::{IntegrationKind, WidgetKind};
+use homarr_integrations::capabilities::media_releases::MediaRelease;
+use homarr_integrations::capabilities::media_server::CurrentSessionsInput;
+use homarr_integrations::types::MediaServerSession;
 use homarr_integrations::{IntegrationContext, IntegrationRegistry};
 use homarr_services::{render_template, ServiceContainer};
 use serde_json::{json, Value};
@@ -325,13 +329,37 @@ impl WidgetResolver {
                 Err(e) => Ok(json!({ "error": e.to_string() })),
             },
             W::MediaServer => {
-                let mut sessions = Vec::new();
-                for ctx in &contexts {
-                    if let Ok(mut s) = self.integrations.get_media_sessions(ctx).await {
-                        sessions.append(&mut s);
-                    }
-                }
-                Ok(json!({ "sessions": sessions }))
+                let input = CurrentSessionsInput {
+                    show_only_playing: options
+                        .get("showOnlyPlaying")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(true),
+                };
+                let results = join_all(contexts.iter().map(|ctx| async move {
+                    let sessions = if ctx.kind == IntegrationKind::Mock {
+                        // The mock only implements the legacy session shape.
+                        self.integrations
+                            .get_media_sessions(ctx)
+                            .await
+                            .map(|list| list.iter().map(legacy_session_json).collect::<Vec<_>>())
+                    } else {
+                        self.integrations
+                            .media_server_sessions(ctx, input)
+                            .await
+                            .map(|list| list.iter().map(to_json_value).collect::<Vec<_>>())
+                    };
+                    (ctx, sessions)
+                }))
+                .await;
+                let (ok, errors) = split_results(results);
+                let count = ok.len();
+                let sessions: Vec<Value> = ok
+                    .into_iter()
+                    .flat_map(|(ctx, list)| {
+                        list.into_iter().map(move |session| tag_integration(session, ctx))
+                    })
+                    .collect();
+                Ok(with_errors(json!({ "sessions": sessions }), count, errors))
             }
             W::MediaRequestsRequestList | W::MediaRequestsRequestStats => {
                 match self.integrations.get_media_requests(first).await {
@@ -347,10 +375,16 @@ impl WidgetResolver {
                 Ok(items) => Ok(json!({ "items": items })),
                 Err(e) => Ok(json!({ "error": e.to_string() })),
             },
-            W::MediaReleases => match self.integrations.media_releases(first).await {
-                Ok(releases) => Ok(json!({ "releases": releases })),
-                Err(e) => Ok(json!({ "error": e.to_string() })),
-            },
+            W::MediaReleases => {
+                let results = join_all(contexts.iter().map(|ctx| async move {
+                    (ctx, self.integrations.media_releases(ctx).await)
+                }))
+                .await;
+                let (ok, errors) = split_results(results);
+                let count = ok.len();
+                let releases = merge_releases(ok);
+                Ok(with_errors(json!({ "releases": releases }), count, errors))
+            }
             W::IndexerManager => match self.integrations.get_indexers(first).await {
                 Ok(indexers) => Ok(json!({ "indexers": indexers })),
                 Err(e) => Ok(json!({ "error": e.to_string() })),
@@ -368,7 +402,56 @@ impl WidgetResolver {
                 }
                 Ok(json!({ "items": summaries }))
             }
-            W::HealthMonitoring | W::SystemResources | W::SystemDisks => {
+            W::HealthMonitoring => {
+                let results = join_all(contexts.iter().map(|ctx| async move {
+                    let item = if ctx.kind == IntegrationKind::Proxmox {
+                        self.integrations
+                            .cluster_health(ctx)
+                            .await
+                            .map(|cluster| json!({ "cluster": cluster }))
+                    } else {
+                        self.integrations
+                            .get_health_monitoring(ctx)
+                            .await
+                            .map(|health| json!({ "health": health }))
+                    };
+                    (ctx, item)
+                }))
+                .await;
+                let (ok, errors) = split_results(results);
+                let count = ok.len();
+                let items: Vec<Value> = ok
+                    .into_iter()
+                    .map(|(ctx, item)| tag_integration(item, ctx))
+                    .collect();
+                Ok(with_errors(json!({ "items": items }), count, errors))
+            }
+            W::UptimeKuma if first.kind == IntegrationKind::UptimeKuma => {
+                let slug = options
+                    .get("statusPageSlug")
+                    .and_then(Value::as_str)
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty());
+                let input = json!({ "slug": slug });
+                let input = &input;
+                let results = join_all(contexts.iter().map(|ctx| async move {
+                    let page = self
+                        .integrations
+                        .integration_data(ctx, "getStatusPage", input)
+                        .await
+                        .map(|page| json!({ "page": page }));
+                    (ctx, page)
+                }))
+                .await;
+                let (ok, errors) = split_results(results);
+                let count = ok.len();
+                let pages: Vec<Value> = ok
+                    .into_iter()
+                    .map(|(ctx, page)| tag_integration(page, ctx))
+                    .collect();
+                Ok(with_errors(json!({ "pages": pages }), count, errors))
+            }
+            W::SystemResources | W::SystemDisks => {
                 match self.integrations.get_health_monitoring(first).await {
                     Ok(info) => Ok(json!({ "health": info })),
                     Err(e) => Ok(json!({ "error": e.to_string() })),
@@ -644,6 +727,83 @@ impl WidgetCache {
     }
 }
 
+fn to_json_value(value: &impl serde::Serialize) -> Value {
+    serde_json::to_value(value).unwrap_or_default()
+}
+
+/// Adds the source integration to an item of a multi-integration widget.
+fn tag_integration(mut item: Value, ctx: &IntegrationContext) -> Value {
+    item["integrationName"] = json!(ctx.name);
+    item["integrationKind"] = json!(ctx.kind.as_str());
+    item
+}
+
+/// Splits per-integration results; each failure becomes an `{integrationName, error}` line.
+fn split_results<T>(
+    results: Vec<(&IntegrationContext, HomarrResult<T>)>,
+) -> (Vec<(&IntegrationContext, T)>, Vec<Value>) {
+    let mut ok = Vec::new();
+    let mut errors = Vec::new();
+    for (ctx, result) in results {
+        match result {
+            Ok(value) => ok.push((ctx, value)),
+            Err(err) => {
+                let error = err.to_string();
+                errors.push(json!({ "integrationName": ctx.name, "error": error }));
+            }
+        }
+    }
+    (ok, errors)
+}
+
+/// Attaches failed integrations; when none succeeded, a top-level `error` also marks the payload
+/// as an error for the cache.
+fn with_errors(mut data: Value, succeeded: usize, errors: Vec<Value>) -> Value {
+    if succeeded == 0 {
+        if let Some(first) = errors.first() {
+            data["error"] = first["error"].clone();
+        }
+    }
+    data["errors"] = Value::Array(errors);
+    data
+}
+
+/// Releases of every integration, newest first, tagged with their source.
+fn merge_releases(results: Vec<(&IntegrationContext, Vec<MediaRelease>)>) -> Vec<Value> {
+    let mut releases: Vec<(&IntegrationContext, MediaRelease)> = results
+        .into_iter()
+        .flat_map(|(ctx, list)| list.into_iter().map(move |release| (ctx, release)))
+        .collect();
+    releases.sort_by(|a, b| b.1.release_date.cmp(&a.1.release_date));
+    releases
+        .into_iter()
+        .map(|(ctx, release)| tag_integration(to_json_value(&release), ctx))
+        .collect()
+}
+
+/// Maps the legacy session shape onto the `StreamSession` JSON the renderer reads.
+fn legacy_session_json(session: &MediaServerSession) -> Value {
+    let (name, episode) = match &session.series_name {
+        Some(series) => (series.as_str(), Some(session.item_name.as_str())),
+        None => (session.item_name.as_str(), None),
+    };
+    json!({
+        "sessionId": session.id,
+        "sessionName": session.client_name,
+        "user": { "username": session.username },
+        "currentlyPlaying": {
+            "type": if episode.is_some() { "tv" } else { "video" },
+            "name": name,
+            "episodeName": episode,
+            "playback": {
+                "state": if session.is_paused { "paused" } else { "playing" },
+                "positionMs": session.progress_percent,
+                "durationMs": 100.0,
+            },
+        },
+    })
+}
+
 fn parse_host_port(raw: &str, default_port: u16) -> (String, u16) {
     let trimmed = raw.trim();
     if let Some((h, p)) = trimmed.rsplit_once(':') {
@@ -657,6 +817,71 @@ fn parse_host_port(raw: &str, default_port: u16) -> (String, u16) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn ctx(name: &str, kind: IntegrationKind) -> IntegrationContext {
+        IntegrationContext {
+            id: name.to_string(),
+            name: name.to_string(),
+            url: "http://localhost".to_string(),
+            external_url: None,
+            kind,
+            secrets: HashMap::new(),
+            restricted: false,
+        }
+    }
+
+    fn release(id: &str, date: &str) -> MediaRelease {
+        serde_json::from_value(json!({
+            "id": id,
+            "type": "movie",
+            "title": id,
+            "releaseDate": date,
+            "imageUrls": { "poster": null, "backdrop": null },
+            "tags": [],
+            "href": "",
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn media_releases_merge_all_integrations_newest_first() {
+        let jellyfin = ctx("Jellyfin", IntegrationKind::Jellyfin);
+        let plex = ctx("Plex", IntegrationKind::Plex);
+        let merged = merge_releases(vec![
+            (
+                &jellyfin,
+                vec![
+                    release("j-old", "2024-01-01T00:00:00Z"),
+                    release("j-new", "2024-03-01T00:00:00Z"),
+                ],
+            ),
+            (&plex, vec![release("p-mid", "2024-02-01T00:00:00Z")]),
+        ]);
+        let ids: Vec<&str> = merged.iter().map(|r| r["id"].as_str().unwrap()).collect();
+        assert_eq!(ids, ["j-new", "p-mid", "j-old"]);
+        assert_eq!(merged[1]["integrationName"], "Plex");
+        assert_eq!(merged[1]["integrationKind"], "plex");
+    }
+
+    #[test]
+    fn failed_integrations_become_error_lines() {
+        let ok = ctx("Jellyfin", IntegrationKind::Jellyfin);
+        let down = ctx("Plex", IntegrationKind::Plex);
+        let results: Vec<(&IntegrationContext, HomarrResult<u8>)> = vec![
+            (&ok, Ok(1)),
+            (
+                &down,
+                Err(homarr_common::HomarrError::Upstream("offline".into())),
+            ),
+        ];
+        let (succeeded, errors) = split_results(results);
+        assert_eq!(succeeded.len(), 1);
+        let data = with_errors(json!({ "releases": [] }), succeeded.len(), errors.clone());
+        assert_eq!(data["errors"][0]["integrationName"], "Plex");
+        assert!(data.get("error").is_none());
+        // Every integration failed: the payload is an error for the cache.
+        assert!(is_error_payload(&with_errors(json!({}), 0, errors)));
+    }
 
     #[test]
     fn refresh_interval_follows_ttl_with_floor() {

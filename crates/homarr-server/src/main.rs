@@ -195,6 +195,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     ensure_sqlite_parent_dir(config.db_driver, &config.db_url);
     let db = Database::connect(config.db_driver, &config.db_url).await?;
     db.migrate().await?;
+    // Trusted certificate hostnames (e.g. self-signed Proxmox on an IP) apply to outbound HTTP.
+    let trusted = homarr_db::repos::settings::list_trusted_hostnames(&db).await?;
+    let pins = trusted.iter().map(|t| (t.hostname.as_str(), t.thumbprint.as_str()));
+    http.set_trusted_hostnames(pins)?;
 
     if config.demo_mode {
         seed_demo(&db, &crypto).await?;

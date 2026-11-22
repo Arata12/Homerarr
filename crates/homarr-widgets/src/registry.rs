@@ -145,6 +145,26 @@ fn build_option_field(kind: WidgetKind, key: &str, default: &Value) -> OptionFie
             field.field_type = "multiSelect".into();
             field.choices = choices(&["name", "progress", "speed", "size", "eta", "state"]);
         }
+        (W::MediaReleases, "layout") => {
+            field.field_type = "select".into();
+            field.choices = choices(&["backdrop", "poster"]);
+        }
+        (W::HealthMonitoring, "visibleClusterSections") => {
+            field.field_type = "multiSelect".into();
+            field.choices = choices(&["node", "qemu", "lxc", "storage"]);
+        }
+        (W::HealthMonitoring, "defaultTab") => {
+            field.field_type = "select".into();
+            field.choices = choices(&["system", "cluster"]);
+        }
+        (W::HealthMonitoring, "sectionIndicatorRequirement") => {
+            field.field_type = "select".into();
+            field.choices = choices(&["all", "any"]);
+        }
+        (W::UptimeKuma, "sortBy") => {
+            field.field_type = "select".into();
+            field.choices = choices(&["status", "name", "uptime"]);
+        }
         (W::RssFeed, "maximumAmountOfPosts") => {
             field.field_type = "slider".into();
             (field.min, field.max, field.step) = (Some(1.0), Some(50.0), Some(1.0));
@@ -358,7 +378,7 @@ fn widget_details(
             "Displays active playback sessions on Plex, Jellyfin, or Emby",
             "movie",
             "media",
-            json!({ "showOnlyPlaying": false }),
+            json!({ "showOnlyPlaying": true, "showBitrate": true, "showLocation": true }),
         ),
         W::MediaRequestsRequestList => (
             "Media Requests",
@@ -393,7 +413,12 @@ fn widget_details(
             "Recent library releases and upcoming premieres",
             "disc",
             "media",
-            json!({}),
+            json!({
+                "layout": "backdrop",
+                "showDescriptionTooltip": true,
+                "showType": true,
+                "showSource": true,
+            }),
         ),
         W::IndexerManager => (
             "Indexer Manager",
@@ -421,7 +446,16 @@ fn widget_details(
             "CPU, memory, disk, and node telemetry",
             "activity",
             "infrastructure",
-            json!({ "fahrenheit": false }),
+            json!({
+                "fahrenheit": false,
+                "cpu": true,
+                "memory": true,
+                "showUptime": true,
+                "fileSystem": true,
+                "visibleClusterSections": ["node", "qemu", "lxc", "storage"],
+                "defaultTab": "system",
+                "sectionIndicatorRequirement": "all",
+            }),
         ),
         W::SystemResources => (
             "System Resources",
@@ -582,7 +616,14 @@ fn widget_details(
             "Monitor status summary from Uptime Kuma",
             "heartbeat",
             "infrastructure",
-            json!({}),
+            json!({
+                "statusPageSlug": "",
+                "summaryOnly": false,
+                "showOnlyProblems": false,
+                "sortBy": "status",
+                "showUptime": true,
+                "showResponseTime": true,
+            }),
         ),
         W::AudioStats => (
             "Audio Stats",
