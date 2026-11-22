@@ -1193,7 +1193,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-api"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "axum",
  "base64 0.22.1",
@@ -1221,7 +1221,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-auth"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "axum",
  "bcrypt",
@@ -1237,7 +1237,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-cli"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "clap",
  "homarr-auth",
@@ -1250,7 +1250,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-common"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "aes",
  "aes-gcm",
@@ -1270,7 +1270,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-core"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "bytes",
  "chrono",
@@ -1291,7 +1291,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-db"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "base64 0.22.1",
  "bcrypt",
@@ -1308,7 +1308,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-definitions"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "homarr-common",
  "serde",
@@ -1318,7 +1318,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-integrations"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1346,7 +1346,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-redis"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "futures-util",
  "homarr-common",
@@ -1360,7 +1360,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-server"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "axum",
  "homarr-api",
@@ -1379,7 +1379,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-services"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "async-trait",
  "base64 0.22.1",
@@ -1410,7 +1410,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-tasks"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "chrono",
  "cron",
@@ -1429,7 +1429,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-web"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "axum",
  "homarr-api",
@@ -1449,7 +1449,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-widgets"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "ammonia",
  "chrono",
@@ -1471,7 +1471,7 @@ dependencies = [
 
 [[package]]
 name = "homarr-workshop"
-version = "3.3.1"
+version = "3.4.0"
 dependencies = [
  "axum",
  "chrono",
