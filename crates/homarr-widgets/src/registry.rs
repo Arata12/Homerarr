@@ -47,7 +47,8 @@ pub fn get_widget_metadata(kind: WidgetKind) -> WidgetMetadata {
     }
 }
 
-const MEDIA_REQUEST_STATUSES: [&str; 5] = ["pending", "approved", "declined", "failed", "completed"];
+const MEDIA_REQUEST_STATUSES: [&str; 5] =
+    ["pending", "approved", "declined", "failed", "completed"];
 
 /// A selectable choice for `select` / `multiSelect` option fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
