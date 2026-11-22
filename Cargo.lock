@@ -1277,13 +1277,16 @@ dependencies = [
  "futures-util",
  "homarr-common",
  "reqwest",
+ "rustls",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "tokio",
  "tracing",
  "tracing-subscriber",
  "url",
  "uuid",
+ "webpki-roots 1.0.12",
 ]
 
 [[package]]

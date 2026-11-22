@@ -1421,6 +1421,109 @@ body.edit-mode .board-container-open-all {
   background: var(--mantine-red);
 }
 
+/* Multi-integration widgets: failed integrations, cluster sections, sessions, releases, monitors */
+.widget-error-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  font-size: 0.74rem;
+  margin-bottom: 6px;
+}
+
+.widget-error-line .muted {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.widget-error-line .dot,
+.cluster-table .dot,
+.uptime-monitors .dot {
+  display: inline-block;
+  flex-shrink: 0;
+}
+
+.badge.warn {
+  color: var(--mantine-yellow);
+  border-color: color-mix(in srgb, var(--mantine-yellow) 42%, transparent);
+  background: color-mix(in srgb, var(--mantine-yellow) 14%, transparent);
+}
+
+.health-item + .health-item {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+}
+
+.cluster-section {
+  border: 1px solid color-mix(in srgb, var(--border) 60%, transparent);
+  border-radius: 7px;
+  margin-top: 6px;
+}
+
+.cluster-section summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 5px 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.cluster-table th,
+.cluster-table td {
+  padding: 3px 8px;
+  font-size: 0.74rem;
+}
+
+.media-summary {
+  margin-bottom: 6px;
+}
+
+.media-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.media-releases {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.media-release {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.media-release-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.media-release-thumb {
+  flex-shrink: 0;
+  object-fit: cover;
+  border-radius: 5px;
+  width: 96px;
+  height: 54px;
+}
+
+.media-releases.is-poster .media-release-thumb {
+  width: 48px;
+  height: 72px;
+}
+
 /* Calendar & Bookmarks & Smart Home */
 .calendar-item {
   display: flex;
