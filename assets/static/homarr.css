@@ -1158,7 +1158,7 @@ body.edit-mode .board-container-open-all {
 
 .dns-tile-body {
   height: 100%;
-  padding: 10px;
+  padding: 2px 10px;
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -1184,13 +1184,13 @@ body.edit-mode .board-container-open-all {
 .dns-tile-value {
   font-size: 18px;
   font-weight: 700;
-  line-height: 1.55;
+  line-height: 1.2;
   font-variant-numeric: tabular-nums;
 }
 
 .dns-tile-label {
   font-size: 12px;
-  line-height: 1.4;
+  line-height: 1.25;
 }
 
 .dns-tile-value,
@@ -1213,7 +1213,7 @@ body.edit-mode .board-container-open-all {
 }
 
 /* Compact tiles: value only, like upstream's isCompact. */
-@container (max-height: 48px) {
+@container (max-height: 34px) {
   .dns-tile-body {
     padding: 2px;
   }
@@ -1321,7 +1321,7 @@ body.edit-mode .board-container-open-all {
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  justify-content: flex-end;
+  justify-content: safe flex-end;
   gap: 12px;
 }
 
