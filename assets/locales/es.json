@@ -69,7 +69,8 @@
         "serverOrigin": "Dominio, IP o ruta del proxy reverso",
         "serverOriginDescription": "Ejemplos: home.lan, 192.168.1.10, o https://home.example.com/services. Elija cómo se añade cada servicio a continuación.",
         "analytics": "Compartir análisis de productos anónimos",
-        "analyticsDescription": "Ayuda a Homarr a mejorar la fiabilidad de las funciones. No se envían credenciales de servicio ni contenido del tablero."
+        "analyticsDescription": "Ayuda a Homarr a mejorar la fiabilidad de las funciones. No se envían credenciales de servicio ni contenido del tablero.",
+        "serverOriginHelp": "Homarr utiliza esta dirección para prellenar las URL del servicio detectado. Todavía puede editar todos los servicios individualmente."
       },
       "discover": {
         "title": "Mira lo que esta instalación puede alcanzar",
@@ -144,7 +145,13 @@
         "secondaryColor": "Color secundario",
         "resetColors": "Restablecer colores",
         "radius": "Radio de esquina del widget",
-        "radiusOptions": {},
+        "radiusOptions": {
+          "xs": "Estrecho",
+          "sm": "Sutil",
+          "md": "Equilibrado",
+          "lg": "Redondeado",
+          "xl": "Suave"
+        },
         "columns": "Columnas del foro",
         "columnsDescription": "Las columnas definen la cuadrícula horizontal usada para el tamaño y la posición de los elementos. 12 son suficientes para la mayoría de las personas.",
         "columnCount": "{count, plural, one {# columna} other {# columnas}}",
@@ -188,7 +195,8 @@
           "loginRequired": "Inicia sesión como administrador después de la configuración para crear una clave API.",
           "configuration": "Configuración del cliente",
           "copy": "Copiar configuración",
-          "advanced": "Abrir herramientas MCP, permisos y detalles de configuración"
+          "advanced": "Abrir herramientas MCP, permisos y detalles de configuración",
+          "copied": "Copiado"
         }
       },
       "review": {
@@ -806,7 +814,9 @@
         "examples": "Ejemplos de enlaces admitidos",
         "requiresHandler": "Los protocolos personalizados requieren una aplicación asociada en tu dispositivo."
       },
-      "description": {},
+      "description": {
+        "label": "Descripción"
+      },
       "useDifferentUrlForPing": {
         "checkbox": {
           "label": "Usar URL diferente para ping",
@@ -858,7 +868,8 @@
       "source": "Fuente de la API: {name}",
       "baseUrl": "URL del servidor",
       "networkScope": "Acceso a la red",
-      "expires": "Esta solicitud única expira en {time}."
+      "expires": "Esta solicitud única expira en {time}.",
+      "save": "Guardar configuración API"
     },
     "page": {
       "list": {
@@ -901,14 +912,19 @@
       "exportLegacyDefinition": "Exportar contenido del widget original",
       "copyMigrationPrompt": "Copiar indicador de migración LLM",
       "pasteMigration": "Pegar widget migrado",
-      "importMigration": "Importar archivo JSON migrado"
+      "importMigration": "Importar archivo JSON migrado",
+      "export": "Exportar",
+      "menu": "Acciones"
     },
     "sourceSetupDialog": {
       "title": "Configurar fuentes de widget",
       "description": "Revisar donde este widget se conecta y añade o reemplaza sus credenciales cifradas.",
-      "credentialsRequired": "Las solicitudes fallarán hasta que se añadan las credenciales requeridas."
+      "credentialsRequired": "Las solicitudes fallarán hasta que se añadan las credenciales requeridas.",
+      "save": "Guardar configuración"
     },
-    "field": {},
+    "field": {
+      "description": "Descripción"
+    },
     "editor": {
       "errorBoundary": {
         "title": "Algo salió mal"
@@ -918,7 +934,8 @@
         "format": "Formatear",
         "insertStarter": "",
         "redo": "Rehacer",
-        "schema": "Esquema"
+        "schema": "Esquema",
+        "copied": "Copiado"
       },
       "reference": {
         "minimal": "Ejemplo mínimo",
@@ -1056,7 +1073,9 @@
         "removeOption": "Eliminar opción",
         "addOption": "Añadir opción",
         "invalidJson": "JSON no válido",
-        "invalidWidget": "Widget inválido"
+        "invalidWidget": "Widget inválido",
+        "type": "Tipo",
+        "description": "Descripción"
       },
       "jsx": {
         "title": "Plantilla JSX",
@@ -1092,7 +1111,9 @@
         "selectIntegration": "Integración configurada",
         "noIntegrations": "No hay integraciones disponibles",
         "integrationUnavailable": "La integración seleccionada ya no está disponible. Seleccione otra integración.",
-        "integrationDescription": "Utiliza la URL de integración guardada y las credenciales. Los cambios se aplican automáticamente. Se requiere acceso completo a la integración para ejecutar las solicitudes."
+        "integrationDescription": "Utiliza la URL de integración guardada y las credenciales. Los cambios se aplican automáticamente. Se requiere acceso completo a la integración para ejecutar las solicitudes.",
+        "name": "Nombre de la tarea",
+        "sourceType": "Integración"
       },
       "ai": {
         "title": "Crear o arreglar con cualquier IA",
@@ -1238,7 +1259,10 @@
         "title": "Este widget puede cambiar los datos remotos",
         "description": "Revise todas las acciones nombradas, credenciales heredadas y confirmación destructiva después de la importación. Los secretos no están incluidos en el archivo."
       },
-      "confirmMigration": "Confirmar reemplazo v2"
+      "confirmMigration": "Confirmar reemplazo v2",
+      "name": "Nombre de la tarea",
+      "cancel": "Cancelar importación",
+      "confirm": "Importar widget"
     },
     "secret": {
       "apiKey": "Clave o token API",
@@ -1355,8 +1379,11 @@
       "action": "Publicar ahora",
       "publicationNote": "La publicación es inmediata. Puedes administrar el envío después en el taller.",
       "definitionChanged": "El widget cambió mientras se preparaba la publicación. Revise de nuevo sus URLs de fuente privada y vuelva a intentarlo.",
-      "error": "Error al publicar"
-    }
+      "error": "Error al publicar",
+      "titleField": "Título",
+      "descriptionField": "Descripción"
+    },
+    "export": "Exportar"
   },
   "integration": {
     "completion": {
@@ -1407,7 +1434,11 @@
               "label": "Seleccionar aplicación existente"
             },
             "new": {
-              "title": "Nueva"
+              "title": "Nueva",
+              "url": {
+                "label": "URL de aplicación",
+                "description": "La URL que abrirá la aplicación cuando se acceda desde el tablero"
+              }
             }
           }
         }
@@ -1465,6 +1496,9 @@
       },
       "apiKeySettings": {
         "label": "Obtener Clave de API"
+      },
+      "appHref": {
+        "placeholder": "URL personalizada de aplicación"
       }
     },
     "action": {
@@ -1628,10 +1662,12 @@
             },
             "notification": {
               "success": {
-                "message": "Certificado añadido a la lista de certificados de confianza"
+                "message": "Certificado añadido a la lista de certificados de confianza",
+                "title": "Certificado de confianza"
               },
               "error": {
-                "message": "No se pudo agregar el certificado a la lista de certificados de confianza"
+                "message": "No se pudo agregar el certificado a la lista de certificados de confianza",
+                "title": "Error al confiar en el certificado"
               }
             }
           },
@@ -1838,6 +1874,10 @@
         "totpSecret": {
           "label": "",
           "newLabel": ""
+        },
+        "wazuhDashboardUrl": {
+          "label": "Tablero URL (opcional)",
+          "newLabel": "Nuevo dashboard URL"
         }
       }
     },
@@ -1856,7 +1896,9 @@
     "search": "Buscar una imagen",
     "field": {
       "preview": "Vista previa",
-      "creator": "Creador"
+      "creator": "Creador",
+      "size": "Tamaño",
+      "actions": "Controles"
     },
     "action": {
       "upload": {
@@ -2323,7 +2365,9 @@
         "collapse": "Colapso"
       },
       "option": {
-        "title": {},
+        "title": {
+          "label": "Título"
+        },
         "customCssClasses": {
           "label": "Clases CSS personalizadas"
         },
@@ -2364,7 +2408,8 @@
       "label": {
         "settings": "Ajustes",
         "settingsFor": "Configuración de {name}",
-        "options": "Opciones"
+        "options": "Opciones",
+        "actions": "Acciones"
       },
       "status": {
         "success": "Ok",
@@ -2447,7 +2492,9 @@
       "moveUnavailableTitle": "No se puede mover los elementos seleccionados",
       "moveUnavailableMessage": "El destino no tiene suficiente espacio para toda la selección.",
       "moveToTab": "",
-      "movedToTab": ""
+      "movedToTab": "",
+      "copy": "Copiar",
+      "delete": "Eliminar"
     },
     "moveResize": {
       "title": "Mover / Redimensionar elemento",
@@ -2518,7 +2565,9 @@
           "label": "Integraciones",
           "removeLabel": "Eliminar integración con {name}"
         },
-        "title": {},
+        "title": {
+          "label": "Título"
+        },
         "customCssClasses": {
           "label": "Clases CSS personalizadas"
         },
@@ -3925,7 +3974,8 @@
         },
         "table": {
           "header": {
-            "node": "Nodo"
+            "node": "Nodo",
+            "name": "Nombre"
           }
         }
       }
@@ -3955,7 +4005,9 @@
         "defaultSort": {
           "option": {
             "cpuUsage": "Uso de CPU",
-            "memoryUsage": "Uso de memoria"
+            "memoryUsage": "Uso de memoria",
+            "name": "Nombre",
+            "state": "Estado"
           }
         }
       },
@@ -4451,7 +4503,9 @@
             "target": "Códec de destino"
           }
         },
-        "unknownUser": "Usuario desconocido"
+        "unknownUser": "Usuario desconocido",
+        "name": "Nombre",
+        "status": "Estado"
       },
       "summary": {
         "sessions": "{count, plural, one {# sesión} other {# sesiones}}",
@@ -4902,29 +4956,38 @@
           "columnTitle": "Controles"
         },
         "added": {
-          "columnTitle": "Añadido"
+          "columnTitle": "Añadido",
+          "detailsTitle": "Fecha Agregada"
         },
         "category": {
-          "columnTitle": "Extras"
+          "columnTitle": "Extras",
+          "detailsTitle": "Categorías (O información adicional)"
         },
         "downSpeed": {
-          "columnTitle": "Descarga"
+          "columnTitle": "Descarga",
+          "detailsTitle": "Velocidad de Descarga"
         },
         "index": {
           "columnTitle": "#",
           "detailsTitle": "Índice actual dentro del cliente"
         },
         "id": {
-          "columnTitle": "ID"
+          "columnTitle": "ID",
+          "detailsTitle": "ID"
         },
-        "integration": {},
-        "name": {},
+        "integration": {
+          "columnTitle": "Integración"
+        },
+        "name": {
+          "columnTitle": "Nombre de la tarea"
+        },
         "progress": {
           "columnTitle": "Progreso",
           "detailsTitle": "Progreso de Descarga"
         },
         "ratio": {
-          "columnTitle": "Relación"
+          "columnTitle": "Relación",
+          "detailsTitle": "Relación de Torrent (recibido/enviado)"
         },
         "received": {
           "columnTitle": "Descarga total",
@@ -4934,16 +4997,26 @@
           "columnTitle": "Subida total",
           "detailsTitle": "Total subido"
         },
-        "size": {},
-        "state": {},
+        "size": {
+          "columnTitle": "Tamaño del archivo",
+          "detailsTitle": "Tamaño total de la selección/archivos"
+        },
+        "state": {
+          "columnTitle": "Estado",
+          "detailsTitle": "Estado de la tarea"
+        },
         "time": {
-          "columnTitle": "Hora de finalización"
+          "columnTitle": "Hora de finalización",
+          "detailsTitle": "Tiempo desde/hasta la finalización",
+          "eta": "Tiempo estimado"
         },
         "type": {
-          "detailsTitle": "Tipo de cliente de descarga"
+          "detailsTitle": "Tipo de cliente de descarga",
+          "columnTitle": "Tipo"
         },
         "upSpeed": {
-          "columnTitle": "Subida"
+          "columnTitle": "Subida",
+          "detailsTitle": "Velocidad de Subida"
         }
       },
       "states": {
@@ -5143,7 +5216,9 @@
           }
         },
         "queue": {
-          "table": {}
+          "table": {
+            "size": "Tamaño"
+          }
         },
         "common": {
           "empty": "Vacío",
@@ -5308,7 +5383,9 @@
             "containerPlaceholder": "",
             "placeholder": "Nombre o Propietario/Nombre"
           },
-          "name": {},
+          "name": {
+            "label": "Nombre"
+          },
           "excludePrereleases": {
             "label": "",
             "description": ""
@@ -5351,6 +5428,10 @@
             "configured": "",
             "notConfigured": ""
           }
+        },
+        "collapsedSections": {
+          "label": "",
+          "description": ""
         }
       },
       "summary": {
@@ -5623,7 +5704,8 @@
       "noSectionsEnabled": "Habilitar al menos una sección en las opciones del widget.",
       "error": {
         "internalServerError": "Error al obtener los datos del test de velocidad"
-      }
+      },
+      "status": "Estado"
     },
     "uptimeKuma": {
       "description": "",
@@ -5938,7 +6020,8 @@
         "actionsDisabledEditMode": "Las acciones están desactivadas mientras el tablero está en modo edición.",
         "widgetItemUnavailable": "Este elemento del widget no está disponible.",
         "toggle": "Cambiar",
-        "confirmDelete": "Confirme esta acción destructiva."
+        "confirmDelete": "Confirme esta acción destructiva.",
+        "copied": "Copiado"
       },
       "option": {
         "definitionId": {
@@ -6225,7 +6308,8 @@
         "temp": "Temperatura",
         "battery": "Batio",
         "uptime": "Tiempo de actividad",
-        "agent": "Agente"
+        "agent": "Agente",
+        "source": "Integración"
       }
     },
     "llamacpp": {
@@ -6923,7 +7007,13 @@
       "itemRadius": {
         "label": "Radio del elemento",
         "description": "Cambia la curvatura de los elementos en tu tablero",
-        "option": {}
+        "option": {
+          "xs": "Muy pequeño",
+          "sm": "Pequeño",
+          "md": "Mediano",
+          "lg": "Grande",
+          "xl": "Muy grande"
+        }
       },
       "isPublic": {
         "label": "Pública",
@@ -7191,6 +7281,10 @@
             "stillHere": "",
             "okay": ""
           }
+        },
+        "heroBanner": {
+          "title": "Bienvenido de nuevo a...",
+          "subtitle": "{app} !!!"
         }
       },
       "board": {
@@ -7588,7 +7682,13 @@
             },
             "defaultRadius": {
               "label": "Estilo de esquina",
-              "options": {}
+              "options": {
+                "xs": "Estrecho",
+                "sm": "Sutil",
+                "md": "Equilibrado",
+                "lg": "Redondeado",
+                "xl": "Suave"
+              }
             },
             "customCss": {
               "label": "CSS personalizado global",
@@ -7613,7 +7713,8 @@
               "logo": "",
               "greeting": "Saludos",
               "on": "En",
-              "off": "Apagado"
+              "off": "Apagado",
+              "appName": "Nombre de la tarea"
             }
           },
           "culture": {
@@ -7837,7 +7938,9 @@
             "lastExecution": {
               "label": "Última Ejecución"
             },
-            "actions": {}
+            "actions": {
+              "label": "Acciones"
+            }
           },
           "table": {
             "search": "Buscar una tarea..."
@@ -7907,7 +8010,9 @@
               },
               "table": {
                 "header": {
-                  "createdBy": "Creado por"
+                  "createdBy": "Creado por",
+                  "source": "Integración",
+                  "actions": "Acciones"
                 }
               },
               "provenance": {
@@ -8209,7 +8314,8 @@
           "exited": "Finalizado",
           "removing": "Eliminando",
           "dead": "Caido"
-        }
+        },
+        "label": "Estado"
       },
       "stats": {
         "memory": {
@@ -8322,7 +8428,8 @@
         "modal": {
           "title": "Añadir contenedor(es) docker a Homarr"
         }
-      }
+      },
+      "title": "Acciones"
     },
     "error": {
       "internalServerError": "Fallo al obtener los contenedores de Docker",
@@ -8464,13 +8571,27 @@
       "internalServerError": "Error al recuperar datos de Kubernetes"
     },
     "field": {
-      "name": {},
-      "namespace": {},
-      "creationTimestamp": {},
-      "state": {},
-      "status": {},
-      "type": {},
-      "architecture": {}
+      "name": {
+        "label": "Nombre de la tarea"
+      },
+      "namespace": {
+        "label": "Espacio de nombre"
+      },
+      "creationTimestamp": {
+        "label": "Creado"
+      },
+      "state": {
+        "label": "Estado de la tarea"
+      },
+      "status": {
+        "label": "Estado"
+      },
+      "type": {
+        "label": "Tipo de cliente de descarga"
+      },
+      "architecture": {
+        "label": "Arquitectura"
+      }
     }
   },
   "permission": {
@@ -8497,7 +8618,10 @@
         "label": "Permisos"
       }
     },
-    "action": {}
+    "action": {
+      "saveUser": "Guardar permisos de usuario",
+      "saveGroup": "Guardar permisos de grupo"
+    }
   },
   "navigationStructure": {
     "manage": {
@@ -8608,7 +8732,8 @@
       "resultsAriaLabel": "{mode} resultados",
       "footer": {
         "navigate": "",
-        "open": "Abrir"
+        "open": "Abrir",
+        "close": "Cerrar"
       }
     },
     "error": {
@@ -9038,7 +9163,9 @@
         "urlTemplate": {
           "label": "Plantilla de búsqueda de URL"
         },
-        "description": {}
+        "description": {
+          "label": "Descripción"
+        }
       },
       "page": {
         "list": {
@@ -9107,7 +9234,8 @@
             "table": {
               "header": {
                 "season": "Temporada",
-                "episodes": "Episodios"
+                "episodes": "Episodios",
+                "status": "Estado"
               },
               "status": {
                 "requested": ""
@@ -9625,7 +9753,8 @@
       "copyCss": "",
       "restoreCss": "",
       "remoteCssTitle": "Este CSS carga un recurso remoto",
-      "remoteCssDescription": "Las hojas de estilo importadas y las URL remotas se ponen en contacto con otro servidor cuando el foro se carga. Revísalas antes de continuar."
+      "remoteCssDescription": "Las hojas de estilo importadas y las URL remotas se ponen en contacto con otro servidor cuando el foro se carga. Revísalas antes de continuar.",
+      "copied": "Copiado"
     },
     "configureWidget": {
       "title": "Revisar widget",

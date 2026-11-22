@@ -8,7 +8,8 @@ pub use registry::{
     OptionChoice, OptionField, WidgetMetadata,
 };
 pub use render::{
-    render_widget_html, render_widget_html_with_origin, render_widget_markup, safe_url,
+    render_widget_html, render_widget_html_with_origin, render_widget_markup,
+    render_widget_markup_localized, safe_url, Translator,
 };
 pub use resolver::{refresh_interval, WidgetResolver};
 pub use sanitize::sanitize_custom_widget_html;

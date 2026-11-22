@@ -69,7 +69,8 @@
         "serverOrigin": "Domain, IP, or reverse-proxy path",
         "serverOriginDescription": "Examples: home.lan, 192.168.1.10, or https://home.example.com/services. Choose how each service is appended below.",
         "analytics": "Share anonymous product analytics",
-        "analyticsDescription": "Helps Homarr improve feature reliability. No service credentials or dashboard content are sent."
+        "analyticsDescription": "Helps Homarr improve feature reliability. No service credentials or dashboard content are sent.",
+        "serverOriginHelp": "Homarr uses this address to prefill detected service URLs. You can still edit every service individually."
       },
       "discover": {
         "title": "See what this installation can actually reach",
@@ -144,7 +145,13 @@
         "secondaryColor": "Secondary color",
         "resetColors": "Reset colors",
         "radius": "Widget corner radius",
-        "radiusOptions": {},
+        "radiusOptions": {
+          "xs": "Tight",
+          "sm": "Subtle",
+          "md": "Balanced",
+          "lg": "Rounded",
+          "xl": "Soft"
+        },
         "columns": "Board columns",
         "columnsDescription": "Columns define the horizontal grid used to size and position items. 12 is plenty for most people.",
         "columnCount": "{count, plural, one {# column} other {# columns}}",
@@ -188,7 +195,8 @@
           "loginRequired": "Sign in as an administrator after setup to create an API key.",
           "configuration": "Client configuration",
           "copy": "Copy configuration",
-          "advanced": "Open MCP tools, permissions, and setup details"
+          "advanced": "Open MCP tools, permissions, and setup details",
+          "copied": "Copied"
         }
       },
       "review": {
@@ -806,7 +814,9 @@
         "examples": "Examples of accepted links",
         "requiresHandler": "Custom protocols require an associated application on your device."
       },
-      "description": {},
+      "description": {
+        "label": "Description"
+      },
       "useDifferentUrlForPing": {
         "checkbox": {
           "label": "Use different URL for ping",
@@ -858,7 +868,8 @@
       "source": "API source: {name}",
       "baseUrl": "Server URL",
       "networkScope": "Network access",
-      "expires": "This one-time request expires at {time}."
+      "expires": "This one-time request expires at {time}.",
+      "save": "Save API configuration"
     },
     "page": {
       "list": {
@@ -901,14 +912,19 @@
       "exportLegacyDefinition": "Export original widget content",
       "copyMigrationPrompt": "Copy LLM migration prompt",
       "pasteMigration": "Paste migrated widget",
-      "importMigration": "Import migrated JSON file"
+      "importMigration": "Import migrated JSON file",
+      "export": "Export",
+      "menu": "Actions"
     },
     "sourceSetupDialog": {
       "title": "Configure widget sources",
       "description": "Review where this widget connects and add or replace its encrypted credentials.",
-      "credentialsRequired": "Requests will fail until the required credentials are added."
+      "credentialsRequired": "Requests will fail until the required credentials are added.",
+      "save": "Save configuration"
     },
-    "field": {},
+    "field": {
+      "description": "Description"
+    },
     "editor": {
       "errorBoundary": {
         "title": "Something went wrong"
@@ -918,7 +934,8 @@
         "format": "Format",
         "insertStarter": "Insert starter",
         "redo": "Redo",
-        "schema": "Schema"
+        "schema": "Schema",
+        "copied": "Copied"
       },
       "reference": {
         "minimal": "Minimal example",
@@ -1056,7 +1073,9 @@
         "removeOption": "Remove option",
         "addOption": "Add option",
         "invalidJson": "Invalid JSON",
-        "invalidWidget": "Invalid widget"
+        "invalidWidget": "Invalid widget",
+        "type": "Type",
+        "description": "Description"
       },
       "jsx": {
         "title": "JSX template",
@@ -1092,7 +1111,9 @@
         "selectIntegration": "Configured integration",
         "noIntegrations": "No matching integrations available",
         "integrationUnavailable": "The selected integration is no longer available. Select another integration.",
-        "integrationDescription": "Uses the saved integration URL and credentials. Changes apply automatically. Full integration access is required to run requests."
+        "integrationDescription": "Uses the saved integration URL and credentials. Changes apply automatically. Full integration access is required to run requests.",
+        "name": "Name",
+        "sourceType": "Source"
       },
       "ai": {
         "title": "Create or fix with any AI",
@@ -1238,7 +1259,10 @@
         "title": "This widget can change remote data",
         "description": "Review every named action, inherited credential, and destructive confirmation after import. Secrets are not included in the file."
       },
-      "confirmMigration": "Confirm v2 replacement"
+      "confirmMigration": "Confirm v2 replacement",
+      "name": "Name",
+      "cancel": "Cancel import",
+      "confirm": "Import widget"
     },
     "secret": {
       "apiKey": "API key or token",
@@ -1355,8 +1379,11 @@
       "action": "Publish now",
       "publicationNote": "Publishing is immediate. You can manage the submission afterward on Workshop.",
       "definitionChanged": "The widget changed while publication was being prepared. Review its private source URLs again, then retry.",
-      "error": "Publication failed"
-    }
+      "error": "Publication failed",
+      "titleField": "Title",
+      "descriptionField": "Description"
+    },
+    "export": "Export"
   },
   "integration": {
     "completion": {
@@ -1407,7 +1434,11 @@
               "label": "Select existing app"
             },
             "new": {
-              "title": "New"
+              "title": "New",
+              "url": {
+                "label": "App url",
+                "description": "The url the app will open when accessed from the dashboard"
+              }
             }
           }
         }
@@ -1465,6 +1496,9 @@
       },
       "apiKeySettings": {
         "label": "Get API key"
+      },
+      "appHref": {
+        "placeholder": "Custom app URL"
       }
     },
     "action": {
@@ -1628,10 +1662,12 @@
             },
             "notification": {
               "success": {
-                "message": "Added certificate to trusted certificate list"
+                "message": "Added certificate to trusted certificate list",
+                "title": "Trusted certificate"
               },
               "error": {
-                "message": "Failed to add certificate to trusted certificate list"
+                "message": "Failed to add certificate to trusted certificate list",
+                "title": "Failed to trust certificate"
               }
             }
           },
@@ -1838,6 +1874,10 @@
         "totpSecret": {
           "label": "TOTP secret (optional)",
           "newLabel": "New TOTP secret"
+        },
+        "wazuhDashboardUrl": {
+          "label": "Dashboard URL (optional)",
+          "newLabel": "New dashboard URL"
         }
       }
     },
@@ -1856,7 +1896,9 @@
     "search": "Find a media",
     "field": {
       "preview": "Preview",
-      "creator": "Creator"
+      "creator": "Creator",
+      "size": "Size",
+      "actions": "Actions"
     },
     "action": {
       "upload": {
@@ -2323,7 +2365,9 @@
         "collapse": "Collapse"
       },
       "option": {
-        "title": {},
+        "title": {
+          "label": "Title"
+        },
         "customCssClasses": {
           "label": "Custom css classes"
         },
@@ -2364,7 +2408,8 @@
       "label": {
         "settings": "Settings",
         "settingsFor": "Settings for {name}",
-        "options": "Options"
+        "options": "Options",
+        "actions": "Actions"
       },
       "status": {
         "success": "OK",
@@ -2447,7 +2492,9 @@
       "moveUnavailableTitle": "Unable to move selected items",
       "moveUnavailableMessage": "The destination does not have enough room for the entire selection.",
       "moveToTab": "Move to tab",
-      "movedToTab": "{count, plural, one {# item moved} other {# items moved}}"
+      "movedToTab": "{count, plural, one {# item moved} other {# items moved}}",
+      "copy": "Copy",
+      "delete": "Delete"
     },
     "moveResize": {
       "title": "Move / resize item",
@@ -2518,7 +2565,9 @@
           "label": "Integrations",
           "removeLabel": "Remove {name} integration"
         },
-        "title": {},
+        "title": {
+          "label": "Title"
+        },
         "customCssClasses": {
           "label": "Custom css classes"
         },
@@ -3925,7 +3974,8 @@
         },
         "table": {
           "header": {
-            "node": "Node"
+            "node": "Node",
+            "name": "Name"
           }
         }
       }
@@ -3955,7 +4005,9 @@
         "defaultSort": {
           "option": {
             "cpuUsage": "CPU usage",
-            "memoryUsage": "Memory usage"
+            "memoryUsage": "Memory usage",
+            "name": "Name",
+            "state": "State"
           }
         }
       },
@@ -4451,7 +4503,9 @@
             "target": "Target codec"
           }
         },
-        "unknownUser": "Unknown user"
+        "unknownUser": "Unknown user",
+        "name": "Name",
+        "status": "Status"
       },
       "summary": {
         "sessions": "{count, plural, one {# session} other {# sessions}}",
@@ -4902,29 +4956,38 @@
           "columnTitle": "Actions"
         },
         "added": {
-          "columnTitle": "Added"
+          "columnTitle": "Added",
+          "detailsTitle": "Added"
         },
         "category": {
-          "columnTitle": "Category"
+          "columnTitle": "Category",
+          "detailsTitle": "Category"
         },
         "downSpeed": {
-          "columnTitle": "Down"
+          "columnTitle": "Down",
+          "detailsTitle": "Down"
         },
         "index": {
           "columnTitle": "#",
           "detailsTitle": "Index"
         },
         "id": {
-          "columnTitle": "ID"
+          "columnTitle": "ID",
+          "detailsTitle": "ID"
         },
-        "integration": {},
-        "name": {},
+        "integration": {
+          "columnTitle": "Source"
+        },
+        "name": {
+          "columnTitle": "Name"
+        },
         "progress": {
           "columnTitle": "Progress",
           "detailsTitle": "Progress"
         },
         "ratio": {
-          "columnTitle": "Ratio"
+          "columnTitle": "Ratio",
+          "detailsTitle": "Ratio"
         },
         "received": {
           "columnTitle": "Down",
@@ -4934,16 +4997,26 @@
           "columnTitle": "Up",
           "detailsTitle": "Uploaded"
         },
-        "size": {},
-        "state": {},
+        "size": {
+          "columnTitle": "Size",
+          "detailsTitle": "Size"
+        },
+        "state": {
+          "columnTitle": "State",
+          "detailsTitle": "State"
+        },
         "time": {
-          "columnTitle": "ETA"
+          "columnTitle": "ETA",
+          "detailsTitle": "ETA",
+          "eta": "ETA"
         },
         "type": {
-          "detailsTitle": "Type"
+          "detailsTitle": "Type",
+          "columnTitle": "Type"
         },
         "upSpeed": {
-          "columnTitle": "Up"
+          "columnTitle": "Up",
+          "detailsTitle": "Up"
         }
       },
       "states": {
@@ -5143,7 +5216,9 @@
           }
         },
         "queue": {
-          "table": {}
+          "table": {
+            "size": "Size"
+          }
         },
         "common": {
           "empty": "Empty",
@@ -5308,7 +5383,9 @@
             "containerPlaceholder": "Name or Owner/Name:track",
             "placeholder": "Name or Owner/Name"
           },
-          "name": {},
+          "name": {
+            "label": "Name"
+          },
           "excludePrereleases": {
             "label": "Exclude pre-releases",
             "description": "Show the latest release not flagged as a pre-release by the provider."
@@ -5351,6 +5428,10 @@
             "configured": "Token configured",
             "notConfigured": "No token set"
           }
+        },
+        "collapsedSections": {
+          "label": "Collapsed sections",
+          "description": "Groups that start collapsed. Click a group title to expand it."
         }
       },
       "summary": {
@@ -5623,7 +5704,8 @@
       "noSectionsEnabled": "Enable at least one section in widget options.",
       "error": {
         "internalServerError": "Failed to fetch speedtest data"
-      }
+      },
+      "status": "Status"
     },
     "uptimeKuma": {
       "description": "Live status, heartbeats and uptime of the monitors on an Uptime Kuma status page",
@@ -5938,7 +6020,8 @@
         "actionsDisabledEditMode": "Actions are disabled while the board is in edit mode.",
         "widgetItemUnavailable": "This widget item is not available.",
         "toggle": "Toggle",
-        "confirmDelete": "Confirm this destructive action."
+        "confirmDelete": "Confirm this destructive action.",
+        "copied": "Copied"
       },
       "option": {
         "definitionId": {
@@ -6225,7 +6308,8 @@
         "temp": "Temp",
         "battery": "Bat",
         "uptime": "Uptime",
-        "agent": "Agent"
+        "agent": "Agent",
+        "source": "Source"
       }
     },
     "llamacpp": {
@@ -6923,7 +7007,13 @@
       "itemRadius": {
         "label": "Item radius",
         "description": "Changes the roundness of tiles on your board",
-        "option": {}
+        "option": {
+          "xs": "Very small",
+          "sm": "Small",
+          "md": "Medium",
+          "lg": "Large",
+          "xl": "Very large"
+        }
       },
       "isPublic": {
         "label": "Public",
@@ -7191,6 +7281,10 @@
             "stillHere": "Still here.",
             "okay": "Okay, okay!"
           }
+        },
+        "heroBanner": {
+          "title": "Welcome back to your",
+          "subtitle": "{app} Board"
         }
       },
       "board": {
@@ -7588,7 +7682,13 @@
             },
             "defaultRadius": {
               "label": "Corner style",
-              "options": {}
+              "options": {
+                "xs": "Tight",
+                "sm": "Subtle",
+                "md": "Balanced",
+                "lg": "Rounded",
+                "xl": "Soft"
+              }
             },
             "customCss": {
               "label": "Global custom CSS",
@@ -7613,7 +7713,8 @@
               "logo": "Logo",
               "greeting": "Greeting",
               "on": "On",
-              "off": "Off"
+              "off": "Off",
+              "appName": "Name"
             }
           },
           "culture": {
@@ -7837,7 +7938,9 @@
             "lastExecution": {
               "label": "Last Execution"
             },
-            "actions": {}
+            "actions": {
+              "label": "Actions"
+            }
           },
           "table": {
             "search": "Search {count} tasks..."
@@ -7907,7 +8010,9 @@
               },
               "table": {
                 "header": {
-                  "createdBy": "Created by"
+                  "createdBy": "Created by",
+                  "source": "Source",
+                  "actions": "Actions"
                 }
               },
               "provenance": {
@@ -8209,7 +8314,8 @@
           "exited": "Exited",
           "removing": "Removing",
           "dead": "Dead"
-        }
+        },
+        "label": "State"
       },
       "stats": {
         "memory": {
@@ -8322,7 +8428,8 @@
         "modal": {
           "title": "Add docker container(-s) to Homarr"
         }
-      }
+      },
+      "title": "Actions"
     },
     "error": {
       "internalServerError": "Failed to fetch Docker containers",
@@ -8464,13 +8571,27 @@
       "internalServerError": "Failed to fetch Kubernetes data"
     },
     "field": {
-      "name": {},
-      "namespace": {},
-      "creationTimestamp": {},
-      "state": {},
-      "status": {},
-      "type": {},
-      "architecture": {}
+      "name": {
+        "label": "Name"
+      },
+      "namespace": {
+        "label": "Namespace"
+      },
+      "creationTimestamp": {
+        "label": "Created"
+      },
+      "state": {
+        "label": "State"
+      },
+      "status": {
+        "label": "Status"
+      },
+      "type": {
+        "label": "Type"
+      },
+      "architecture": {
+        "label": "Architecture"
+      }
     }
   },
   "permission": {
@@ -8497,7 +8618,10 @@
         "label": "Permission"
       }
     },
-    "action": {}
+    "action": {
+      "saveUser": "Save user permission",
+      "saveGroup": "Save group permission"
+    }
   },
   "navigationStructure": {
     "manage": {
@@ -8608,7 +8732,8 @@
       "resultsAriaLabel": "{mode} results",
       "footer": {
         "navigate": "Navigate",
-        "open": "Open"
+        "open": "Open",
+        "close": "Close"
       }
     },
     "error": {
@@ -9038,7 +9163,9 @@
         "urlTemplate": {
           "label": "URL search template"
         },
-        "description": {}
+        "description": {
+          "label": "Description"
+        }
       },
       "page": {
         "list": {
@@ -9107,7 +9234,8 @@
             "table": {
               "header": {
                 "season": "Season",
-                "episodes": "Episodes"
+                "episodes": "Episodes",
+                "status": "Status"
               },
               "status": {
                 "requested": "Requested"
@@ -9625,7 +9753,8 @@
       "copyCss": "Copy CSS",
       "restoreCss": "Restore current CSS",
       "remoteCssTitle": "This CSS loads a remote resource",
-      "remoteCssDescription": "Imported stylesheets and remote URLs contact another server when the board loads. Review them before continuing."
+      "remoteCssDescription": "Imported stylesheets and remote URLs contact another server when the board loads. Review them before continuing.",
+      "copied": "Copied"
     },
     "configureWidget": {
       "title": "Review widget",
