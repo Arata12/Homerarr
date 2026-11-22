@@ -576,10 +576,11 @@ body.edit-mode .edit-mode-bar {
   grid-auto-rows: var(--cell);
 }
 
-/* Upstream scales the whole canvas with the cell size; zoom widget content by cell / 110px
-   (tan(atan2()) yields the unitless ratio), never below 1 so small screens are unchanged. */
+/* Upstream scales the whole canvas with the cell size; zoom widget content by pitch / 188px
+   (tan(atan2()) yields the unitless ratio), calibrated so text matches upstream side by side
+   (1.0 at 10 columns on 1920px), never below 1 so small screens are unchanged. */
 .grid-item > .widget-shell {
-  zoom: clamp(1, tan(atan2(var(--cell), 110px)), 1.5);
+  zoom: clamp(1, tan(atan2(var(--cell) + 12px, 188px)), 1.5);
 }
 
 .section-header {
