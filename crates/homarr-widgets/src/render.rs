@@ -1,7 +1,107 @@
+use std::cell::RefCell;
+use std::rc::Rc;
+
 use homarr_definitions::WidgetKind;
 use maud::{html, Markup, PreEscaped};
 use serde_json::Value;
 use url::Url;
+
+/// Looks up a widget string in the viewer's language: `(dotted key, English default) -> text`.
+pub type Translator = Rc<dyn Fn(&str, &str) -> String>;
+
+thread_local! {
+    // Set only for the duration of one synchronous `render_widget_markup_localized` call.
+    static TRANSLATOR: RefCell<Option<Translator>> = const { RefCell::new(None) };
+}
+
+/// Restores the previous translator even if rendering panics.
+struct TranslatorGuard(Option<Translator>);
+
+impl Drop for TranslatorGuard {
+    fn drop(&mut self) {
+        let previous = self.0.take();
+        TRANSLATOR.with(|cell| *cell.borrow_mut() = previous);
+    }
+}
+
+/// Translated text for `key` (English `default` without a translator).
+fn t(key: &str, default: &str) -> String {
+    tf(key, default, &[])
+}
+
+/// Like [`t`], filling upstream's ICU placeholders: `{name}` and
+/// `{count, plural, one {…} other {…}}` (with `#` standing for the count).
+fn tf(key: &str, default: &str, args: &[(&str, &dyn std::fmt::Display)]) -> String {
+    let translator = TRANSLATOR.with(|cell| cell.borrow().clone());
+    let template = translator.map_or_else(|| default.to_string(), |tr| tr(key, default));
+    let args: Vec<(&str, String)> = args.iter().map(|(k, v)| (*k, v.to_string())).collect();
+    format_icu(&template, &args)
+}
+
+fn format_icu(template: &str, args: &[(&str, String)]) -> String {
+    let mut out = String::new();
+    let mut rest = template;
+    while let Some(start) = rest.find('{') {
+        out.push_str(&rest[..start]);
+        let Some(len) = matching_brace(&rest[start..]) else {
+            break;
+        };
+        let inner = &rest[start + 1..start + len];
+        rest = &rest[start + len + 1..];
+        let mut parts = inner.splitn(3, ',').map(str::trim);
+        let name = parts.next().unwrap_or("");
+        let value = args.iter().find(|(k, _)| *k == name).map(|(_, v)| v);
+        match (parts.next(), parts.next(), value) {
+            (Some("plural"), Some(cases), Some(value)) => {
+                let case = if value == "1" { "one" } else { "other" };
+                let text = plural_case(cases, case)
+                    .or_else(|| plural_case(cases, "other"))
+                    .unwrap_or("");
+                out.push_str(&format_icu(&text.replace('#', value), args));
+            }
+            (None, _, Some(value)) => out.push_str(value),
+            _ => {
+                out.push('{');
+                out.push_str(inner);
+                out.push('}');
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// Byte offset of the `}` closing the `{` at the start of `s`.
+fn matching_brace(s: &str) -> Option<usize> {
+    let mut depth = 0;
+    for (i, c) in s.char_indices() {
+        match c {
+            '{' => depth += 1,
+            '}' => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(i);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Text of `selector {text}` in an ICU plural case list.
+fn plural_case<'a>(cases: &'a str, selector: &str) -> Option<&'a str> {
+    let mut rest = cases;
+    while let Some(open) = rest.find('{') {
+        let len = matching_brace(&rest[open..])?;
+        let text = &rest[open + 1..open + len];
+        if rest[..open].trim() == selector {
+            return Some(text);
+        }
+        rest = &rest[open + len + 1..];
+    }
+    None
+}
 
 /// Filters unsafe URL schemes (`javascript:`, `data:text/html`, protocol-relative `//`, quotes)
 /// in rendered anchors/images/frames.
@@ -208,6 +308,19 @@ pub fn render_widget_markup(
     render_widget(kind, item_id, options, data, self_origin)
 }
 
+/// [`render_widget_markup`] with the widget's own text looked up through `translate`.
+pub fn render_widget_markup_localized(
+    kind: WidgetKind,
+    item_id: &str,
+    options: &Value,
+    data: &Value,
+    self_origin: Option<&str>,
+    translate: Translator,
+) -> Markup {
+    let _restore = TranslatorGuard(TRANSLATOR.with(|cell| cell.replace(Some(translate))));
+    render_widget(kind, item_id, options, data, self_origin)
+}
+
 fn render_widget(
     kind: WidgetKind,
     item_id: &str,
@@ -222,7 +335,7 @@ fn render_widget(
     {
         return html! {
             div class={ "widget-shell widget-shell-flush widget-" (kind.as_str()) } data-item-id=(item_id) {
-                div.widget-empty { "Assign a compatible integration in board edit mode to display live telemetry." }
+                div.widget-empty { (t("widget.common.error.noIntegration", "Assign a compatible integration in board edit mode to display live telemetry.")) }
             }
         };
     }
@@ -1125,9 +1238,9 @@ fn render_media_requests(kind: WidgetKind, options: &Value, data: &Value) -> Mar
         };
         return html! {
             div.stats-grid {
-                (stat_pill("Total", count("total")))
-                (stat_pill("Pending", count("pending")))
-                (stat_pill("Available", count("available")))
+                (stat_pill(&t("common.total", "Total"), count("total")))
+                (stat_pill(&t("widget.mediaRequests-requestList.status.pending", "Pending"), count("pending")))
+                (stat_pill(&t("widget.mediaRequests-requestList.availability.available", "Available"), count("available")))
             }
         };
     }
@@ -1163,20 +1276,33 @@ fn render_media_requests(kind: WidgetKind, options: &Value, data: &Value) -> Mar
         })
         .collect();
     if items.is_empty() {
-        return empty_box("No media requests");
+        return empty_box(&t(
+            "widget.mediaRequests-requestList.empty.title",
+            "No media requests",
+        ));
     }
     let link_target = if new_tab { "_blank" } else { "_self" };
     let link_rel = new_tab.then_some("noopener noreferrer");
+    let unknown = t("widget.mediaRequests-requestList.unknown", "Unknown");
+    let to_be_determined = t("widget.mediaRequests-requestList.toBeDetermined", "TBD");
+    let approve = t(
+        "widget.mediaRequests-requestList.pending.approve",
+        "Approve request",
+    );
+    let decline = t(
+        "widget.mediaRequests-requestList.pending.decline",
+        "Decline request",
+    );
     html! {
         ul.media-request-list {
             @for item in items.iter().take(20) {
                 @let status = str_field(item, "status");
-                @let title = Some(str_field(item, "title")).filter(|t| !t.is_empty()).unwrap_or("Unknown");
+                @let title = Some(str_field(item, "title")).filter(|t| !t.is_empty()).unwrap_or(&unknown);
                 @let href = safe_url(str_field(item, "href"));
                 @let poster = safe_url(str_field(item, "posterUrl"));
                 @let backdrop = safe_url(str_field(item, "backdropUrl"));
-                @let year = str_field(item, "airDate").get(..4).unwrap_or("TBD");
-                @let requested_by = Some(str_field(item, "requestedBy")).filter(|u| !u.is_empty()).unwrap_or("Unknown");
+                @let year = str_field(item, "airDate").get(..4).unwrap_or(&to_be_determined);
+                @let requested_by = Some(str_field(item, "requestedBy")).filter(|u| !u.is_empty()).unwrap_or(&unknown);
                 @let input = serde_json::json!({ "requestId": str_field(item, "id") }).to_string();
                 li.media-request-card {
                     @if backdrop != "#" {
@@ -1206,8 +1332,8 @@ fn render_media_requests(kind: WidgetKind, options: &Value, data: &Value) -> Mar
                             }
                             @if status == "pending" && !integration_id.is_empty() {
                                 div.media-request-actions {
-                                    button.media-action.c-green type="button" title="Approve request" aria-label="Approve request" data-integration-action="mediaRequestApprove" data-integration-ids=(integration_id) data-action-input=(input) { (icon(ICON_THUMB_UP)) }
-                                    button.media-action.c-red type="button" title="Decline request" aria-label="Decline request" data-integration-action="mediaRequestDecline" data-integration-ids=(integration_id) data-action-input=(input) { (icon(ICON_THUMB_DOWN)) }
+                                    button.media-action.c-green type="button" title=(approve) aria-label=(approve) data-integration-action="mediaRequestApprove" data-integration-ids=(integration_id) data-action-input=(input) { (icon(ICON_THUMB_UP)) }
+                                    button.media-action.c-red type="button" title=(decline) aria-label=(decline) data-integration-action="mediaRequestDecline" data-integration-ids=(integration_id) data-action-input=(input) { (icon(ICON_THUMB_DOWN)) }
                                 }
                             } @else {
                                 @let (label, color) = request_status_badge(status);
@@ -1222,8 +1348,8 @@ fn render_media_requests(kind: WidgetKind, options: &Value, data: &Value) -> Mar
 }
 
 /// Upstream `mediaAvailabilityConfiguration` label and color.
-fn availability_badge(availability: &str) -> Option<(&'static str, &'static str)> {
-    Some(match availability {
+fn availability_badge(availability: &str) -> Option<(String, &'static str)> {
+    let (label, color) = match availability {
         "unknown" => ("Unknown", "orange"),
         "pending" => ("Pending", "violet"),
         "processing" => ("Processing", "blue"),
@@ -1233,19 +1359,23 @@ fn availability_badge(availability: &str) -> Option<(&'static str, &'static str)
         "blacklisted" => ("Blacklisted", "gray"),
         "deleted" => ("Deleted", "red"),
         _ => return None,
-    })
+    };
+    let key = format!("widget.mediaRequests-requestList.availability.{availability}");
+    Some((t(&key, label), color))
 }
 
 /// Upstream `mediaRequestStatusConfiguration` label and color.
-fn request_status_badge(status: &str) -> (&str, &'static str) {
-    match status {
+fn request_status_badge(status: &str) -> (String, &'static str) {
+    let (label, color) = match status {
         "pending" => ("Pending", "blue"),
         "approved" => ("Approved", "green"),
         "declined" => ("Declined", "red"),
         "failed" => ("Failed", "red"),
         "completed" => ("Completed", "green"),
-        other => (other, "gray"),
-    }
+        other => return (other.to_string(), "gray"),
+    };
+    let key = format!("widget.mediaRequests-requestList.status.{status}");
+    (t(&key, label), color)
 }
 
 /// Static Tabler icon markup.
@@ -1345,15 +1475,18 @@ const DNS_ICON_TIMER: &str = r#"<svg viewBox="0 0 24 24" width="16" height="16" 
 /// Upstream's timer popover: hours + minutes, 0/blank = until re-enabled. homarr.js turns the
 /// inputs into the `duration` (seconds) of the `dnsHoleDisable` action.
 fn dns_timer_popover(ids: &str, summary_class: &str, disabled: bool) -> Markup {
+    let set_timer = t("widget.dnsHoleControls.controls.setTimer", "Set Timer");
+    let hours = t("common.information.hours", "Hours");
+    let minutes = t("common.information.minutes", "Minutes");
     html! {
         details.dns-timer {
-            summary class=(summary_class) title="Set Timer" aria-label="Set Timer" aria-disabled=[disabled.then_some("true")] {
+            summary class=(summary_class) title=(set_timer) aria-label=(set_timer) aria-disabled=[disabled.then_some("true")] {
                 // safe: static SVG const.
                 (PreEscaped(DNS_ICON_TIMER))
             }
             div.dns-timer-popover {
-                div.dns-timer-title { "Set Timer" }
-                @for (name, text, max) in [("hours", "Hours", 999), ("minutes", "Minutes", 59)] {
+                div.dns-timer-title { (set_timer) }
+                @for (name, text, max) in [("hours", &hours, 999), ("minutes", &minutes, 59)] {
                     div.dns-timer-field {
                         span { (text) }
                         button.btn.btn-sm type="button" data-action="dns-timer-step" data-step="down" aria-label={ "- " (text) } { "–" }
@@ -1361,10 +1494,10 @@ fn dns_timer_popover(ids: &str, summary_class: &str, disabled: bool) -> Markup {
                         button.btn.btn-sm type="button" data-action="dns-timer-step" data-step="up" aria-label={ "+ " (text) } { "+" }
                     }
                 }
-                div.dns-timer-hint { "Leave blank to unlimited" }
+                div.dns-timer-hint { (t("widget.dnsHoleControls.controls.unlimited", "Leave blank to unlimited")) }
                 button.btn.btn-sm.dns-timer-set type="button" data-integration-action="dnsHoleDisable" data-integration-ids=(ids) data-dns-timer {
                     // safe: static SVG const.
-                    (PreEscaped(DNS_ICON_TIMER)) " Set"
+                    (PreEscaped(DNS_ICON_TIMER)) " " (t("widget.dnsHoleControls.controls.set", "Set"))
                 }
             }
         }
@@ -1385,7 +1518,15 @@ fn render_dns_hole(kind: WidgetKind, options: &Value, data: &Value) -> Markup {
     let summaries: Vec<&Value> = items.iter().filter_map(|i| i.get("summary")).collect();
     if summaries.is_empty() {
         let first_error = items.iter().find_map(|i| i.get("error")?.as_str());
-        return empty_box(first_error.unwrap_or("DNS Hole metrics unavailable"));
+        return empty_box(&first_error.map_or_else(
+            || {
+                t(
+                    "widget.dnsHoleSummary.error.internalServerError",
+                    "DNS Hole metrics unavailable",
+                )
+            },
+            str::to_string,
+        ));
     }
     let count = |key: &str| {
         summaries
@@ -1404,9 +1545,12 @@ fn render_dns_hole(kind: WidgetKind, options: &Value, data: &Value) -> Markup {
     let multiple = summaries.len() >= 2;
     let suffix = if multiple { "+" } else { "" };
     let domains = format!("{}{suffix}", format_number(count("domainsBeingBlocked")));
-    let domains_tooltip = multiple.then_some(
-        "Due to multiple integrations Homarr can't calculate the exact number of domains being blocked",
-    );
+    let domains_tooltip = multiple.then(|| {
+        t(
+            "widget.dnsHoleSummary.domainsTooltip",
+            "Due to multiple integrations Homarr can't calculate the exact number of domains being blocked",
+        )
+    });
     let layout = match options.get("layout").and_then(Value::as_str) {
         Some("row") => " dns-layout-row",
         Some("column") => " dns-layout-column",
@@ -1425,13 +1569,13 @@ fn render_dns_hole(kind: WidgetKind, options: &Value, data: &Value) -> Markup {
     html! {
         div class={ "dns-hole-grid" (layout) (colors) } {
             (dns_tile("dns-red", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a1 1 0 0 1 1 -1h14a1 1 0 0 1 1 1v7a1 1 0 0 1 -1 1h-14a1 1 0 0 1 -1 -1z" /><path d="M7 16v4" /><path d="M7.5 16l9 -9" /><path d="M13.5 16l6.5 -6.5" /><path d="M4 13.5l6.5 -6.5" /><path d="M17 16v4" /><path d="M5 20h4" /><path d="M15 20h4" /><path d="M17 7v-2" /><path d="M7 7v-2" /></svg>"#,
-                &format_number(blocked), "Blocked today", None))
+                &format_number(blocked), &t("widget.dnsHoleSummary.data.adsBlockedToday", "Blocked today"), None))
             (dns_tile("dns-yellow", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 17m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M7 7m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M6 18l12 -12" /></svg>"#,
-                &format!("{}%", format_number(pct)), "Blocked today", None))
+                &format!("{}%", format_number(pct)), &t("widget.dnsHoleSummary.data.adsBlockedTodayPercentage", "Blocked today"), None))
             (dns_tile("dns-cyan", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>"#,
-                &format_number(queries), "Queries today", None))
+                &format_number(queries), &t("widget.dnsHoleSummary.data.dnsQueriesToday", "Queries today"), None))
             (dns_tile("dns-green", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 7a9 9 0 0 0 -7.5 -4a8.991 8.991 0 0 0 -7.484 4" /><path d="M11.5 3a16.989 16.989 0 0 0 -1.826 4" /><path d="M12.5 3a16.989 16.989 0 0 1 1.828 4" /><path d="M19.5 17a9 9 0 0 1 -7.5 4a8.991 8.991 0 0 1 -7.484 -4" /><path d="M11.5 21a16.989 16.989 0 0 1 -1.826 -4" /><path d="M12.5 21a16.989 16.989 0 0 0 1.828 -4" /><path d="M2 10l1 4l1.5 -4l1.5 4l1 -4" /><path d="M17 10l1 4l1.5 -4l1.5 4l1 -4" /><path d="M9.5 10l1 4l1.5 -4l1.5 4l1 -4" /></svg>"#,
-                &domains, "Domains on blocklist", domains_tooltip))
+                &domains, &t("widget.dnsHoleSummary.data.domainsBeingBlocked", "Domains on blocklist"), domains_tooltip.as_deref()))
         }
     }
 }
@@ -1442,7 +1586,10 @@ fn is_dns_disabled(item: &Value) -> bool {
 
 fn render_dns_controls(options: &Value, items: &[&Value]) -> Markup {
     if items.is_empty() {
-        return empty_box("DNS Hole metrics unavailable");
+        return empty_box(&t(
+            "widget.dnsHoleControls.error.internalServerError",
+            "DNS Hole metrics unavailable",
+        ));
     }
     // Integrations that answered, split by state; failed ones are left out of "toggle all".
     let ids_where_disabled = |disabled: bool| {
@@ -1460,17 +1607,19 @@ fn render_dns_controls(options: &Value, items: &[&Value]) -> Markup {
         .unwrap_or(true);
     // "Disable" means until re-enabled, like upstream's toggle (duration 0).
     let forever = r#"{"duration":0}"#;
+    let enable_all = t("widget.dnsHoleControls.controls.enableAll", "Enable All");
+    let disable_all = t("widget.dnsHoleControls.controls.disableAll", "Disable All");
     html! {
         div.dns-controls {
             @if show_all {
                 div.dns-toggle-all {
-                    button.dns-all-btn.dns-all-enable type="button" title="Enable All" aria-label="Enable All"
+                    button.dns-all-btn.dns-all-enable type="button" title=(enable_all) aria-label=(enable_all)
                         data-integration-action="dnsHoleEnable" data-integration-ids=(disabled_ids) disabled[disabled_ids.is_empty()] {
                         // safe: static SVG const.
                         (PreEscaped(DNS_ICON_PLAY))
                     }
                     (dns_timer_popover(&enabled_ids, "dns-all-btn dns-all-timer", enabled_ids.is_empty()))
-                    button.dns-all-btn.dns-all-disable type="button" title="Disable All" aria-label="Disable All"
+                    button.dns-all-btn.dns-all-disable type="button" title=(disable_all) aria-label=(disable_all)
                         data-integration-action="dnsHoleDisable" data-integration-ids=(enabled_ids) data-action-input=(forever) disabled[enabled_ids.is_empty()] {
                         // safe: static SVG const.
                         (PreEscaped(DNS_ICON_STOP))
@@ -1491,16 +1640,16 @@ fn render_dns_controls(options: &Value, items: &[&Value]) -> Markup {
                         div.dns-control-data {
                             div.dns-control-name { (name) }
                             @if error.is_some() {
-                                span.dns-status { "Disconnected" }
+                                span.dns-status { (t("widget.dnsHoleControls.controls.disconnected", "Disconnected")) }
                             } @else if enabled {
-                                button.dns-status.dns-enabled type="button" aria-label={ "Disable All: " (name) }
+                                button.dns-status.dns-enabled type="button" aria-label={ (disable_all) ": " (name) }
                                     data-integration-action="dnsHoleDisable" data-integration-ids=(id) data-action-input=(forever) {
-                                    span.dns-status-dot {} "Enabled"
+                                    span.dns-status-dot {} (t("widget.dnsHoleControls.controls.enabled", "Enabled"))
                                 }
                             } @else {
-                                button.dns-status.dns-disabled type="button" aria-label={ "Enable All: " (name) }
+                                button.dns-status.dns-disabled type="button" aria-label={ (enable_all) ": " (name) }
                                     data-integration-action="dnsHoleEnable" data-integration-ids=(id) {
-                                    span.dns-status-dot {} "Disabled"
+                                    span.dns-status-dot {} (t("widget.dnsHoleControls.controls.disabled", "Disabled"))
                                 }
                             }
                         }
@@ -1589,7 +1738,7 @@ fn render_host_health(options: &Value, h: &Value) -> Markup {
     html! {
         div.health-host-row {
             strong { (name) }
-            span.badge.up { "Up " (uptime) }
+            span.badge.up { (t("widget.healthMonitoring.cluster.popover.detail.uptime", "Uptime")) " " (uptime) }
         }
         @if show_cpu || show_memory {
             div.health-gauges {
@@ -1597,7 +1746,7 @@ fn render_host_health(options: &Value, h: &Value) -> Markup {
                     (render_donut_gauge("CPU", cpu, &cpu_sub, "var(--mantine-blue)"))
                 }
                 @if show_memory {
-                    (render_donut_gauge("Memory", mem_pct, &mem_sub, "var(--mantine-violet)"))
+                    (render_donut_gauge(&t("widget.healthMonitoring.cluster.popover.detail.memory", "Memory"), mem_pct, &mem_sub, "var(--mantine-violet)"))
                 }
             }
         }
@@ -1696,7 +1845,7 @@ fn render_health_monitoring(options: &Value, data: &Value) -> Markup {
     html! {
         (render_integration_errors(data))
         @if items.is_empty() && !has_integration_errors(data) {
-            (empty_box("Health telemetry unavailable"))
+            (empty_box(&t("widget.healthMonitoring.error.internalServerError", "Health telemetry unavailable")))
         }
         @for item in ordered {
             div.health-item {
@@ -1711,7 +1860,7 @@ fn render_health_monitoring(options: &Value, data: &Value) -> Markup {
 }
 
 struct ClusterSection<'a> {
-    title: &'static str,
+    title: String,
     icon: &'static str,
     resources: Vec<&'a Value>,
     is_storage: bool,
@@ -1749,7 +1898,16 @@ fn format_long_uptime(secs: u64) -> String {
     let days = rest / 86_400;
     let hours = (rest % 86_400) / 3_600;
     let minutes = (rest % 3_600) / 60;
-    format!("Uptime: {months} Months, {days} Days, {hours} Hours, {minutes} Minutes")
+    tf(
+        "widget.healthMonitoring.popover.uptime",
+        "Uptime: {months} Months, {days} Days, {hours} Hours, {minutes} Minutes",
+        &[
+            ("months", &months),
+            ("days", &days),
+            ("hours", &hours),
+            ("minutes", &minutes),
+        ],
+    )
 }
 
 fn render_cluster_ring(icon: &'static str, label: &str, pct: f64) -> Markup {
@@ -1825,7 +1983,7 @@ fn render_cluster_health(options: &Value, cluster: &Value) -> Markup {
     ]
     .into_iter()
     .filter(|(section, ..)| visible.contains(section))
-    .map(|(_, title, icon, key)| {
+    .map(|(section, title, icon, key)| {
         let mut resources: Vec<&Value> = list(key).iter().collect();
         resources.sort_by_key(|&r| {
             (
@@ -1834,7 +1992,10 @@ fn render_cluster_health(options: &Value, cluster: &Value) -> Markup {
             )
         });
         ClusterSection {
-            title,
+            title: t(
+                &format!("widget.healthMonitoring.cluster.resource.{section}.name"),
+                title,
+            ),
             icon,
             resources,
             is_storage: key == "storages",
@@ -1878,9 +2039,9 @@ fn render_cluster_health(options: &Value, cluster: &Value) -> Markup {
                                 table.hm-table {
                                     thead {
                                         tr {
-                                            th { "Name" }
+                                            th { (t("widget.healthMonitoring.cluster.table.header.name", "Name")) }
                                             @if section.is_storage {
-                                                th { "Node" }
+                                                th { (t("widget.healthMonitoring.cluster.table.header.node", "Node")) }
                                             } @else {
                                                 th { "CPU" }
                                                 th { "RAM" }
@@ -1954,15 +2115,16 @@ fn format_ratio_pct(used: f64, total: f64) -> String {
 /// Display order of the status breakdown, like upstream's `presentStatuses`.
 const MONITOR_STATUSES: [&str; 6] = ["up", "down", "pending", "maintenance", "stale", "unknown"];
 
-fn monitor_status_label(status: &str) -> &'static str {
-    match status {
-        "up" => "Up",
-        "down" => "Down",
-        "pending" => "Pending",
-        "maintenance" => "Maintenance",
-        "stale" => "No recent data",
-        _ => "No data",
-    }
+fn monitor_status_label(status: &str) -> String {
+    let (status, label) = match status {
+        "up" => ("up", "Up"),
+        "down" => ("down", "Down"),
+        "pending" => ("pending", "Pending"),
+        "maintenance" => ("maintenance", "Maintenance"),
+        "stale" => ("stale", "No recent data"),
+        _ => ("unknown", "No data"),
+    };
+    t(&format!("widget.uptimeKuma.status.{status}"), label)
 }
 
 fn is_inactive_status(status: &str) -> bool {
@@ -1993,6 +2155,14 @@ fn uptime_tone(status: &str, uptime: Option<f64>) -> &'static str {
         }
         _ => "inactive",
     }
+}
+
+fn format_ms(ms: f64) -> String {
+    tf(
+        "widget.uptimeKuma.unit.milliseconds",
+        "{value} ms",
+        &[("value", &format!("{ms:.0}"))],
+    )
 }
 
 fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
@@ -2059,17 +2229,25 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
     } else {
         "operational"
     };
+    let overall_text = |label: &str| t(&format!("widget.uptimeKuma.overall.{overall}"), label);
     let (overall_icon, overall_label) = match overall {
-        "operational" => (ICON_CIRCLE_CHECK, "All systems operational".to_string()),
+        "operational" => (ICON_CIRCLE_CHECK, overall_text("All systems operational")),
         "degraded" => (
             ICON_ALERT_TRIANGLE,
-            "Partially degraded service".to_string(),
+            overall_text("Partially degraded service"),
         ),
-        "outage" => (ICON_CIRCLE_X, "Major outage".to_string()),
-        "maintenance" => (ICON_TOOL, "Under maintenance".to_string()),
-        _ if up > 0 => (ICON_HELP_CIRCLE, format!("{up} of {total} monitors up")),
-        _ if count("stale") > 0 => (ICON_HELP_CIRCLE, "No recent data".to_string()),
-        _ => (ICON_HELP_CIRCLE, "Waiting for first checks".to_string()),
+        "outage" => (ICON_CIRCLE_X, overall_text("Major outage")),
+        "maintenance" => (ICON_TOOL, overall_text("Under maintenance")),
+        _ if up > 0 => (
+            ICON_HELP_CIRCLE,
+            tf(
+                "widget.uptimeKuma.summary.upRatio",
+                "{up} of {total} monitors up",
+                &[("up", &up), ("total", &total)],
+            ),
+        ),
+        _ if count("stale") > 0 => (ICON_HELP_CIRCLE, monitor_status_label("stale")),
+        _ => (ICON_HELP_CIRCLE, overall_text("Waiting for first checks")),
     };
     let status_page = match pages {
         [page] => page.get("page"),
@@ -2119,7 +2297,7 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
         (render_integration_errors(data))
         @if pages.is_empty() {
             @if !has_integration_errors(data) {
-                (empty_box("No monitors"))
+                (empty_box(&t("widget.uptimeKuma.empty.title", "No monitors")))
             }
         } @else {
             div.uk {
@@ -2141,7 +2319,7 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
                             @for (status, n) in &present {
                                 span.uk-distribution-part data-status=(status)
                                     style=(format!("flex-grow:{n}"))
-                                    title=(format!("{n} {}", monitor_status_label(status))) {}
+                                    title=(tf("widget.uptimeKuma.summary.statusCount", "{count} {status}", &[("count", n), ("status", &monitor_status_label(status))])) {}
                             }
                         }
                         div.uk-summary-line {
@@ -2157,7 +2335,7 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
                             @if let Some(uptime) = average_uptime.filter(|_| show_average) {
                                 span.uk-metric {
                                     strong { (format_kuma_uptime(uptime)) }
-                                    span.muted { "uptime 24h" }
+                                    span.muted { (t("widget.uptimeKuma.summary.averageUptime", "uptime 24h")) }
                                 }
                             }
                         }
@@ -2167,11 +2345,7 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
                     @if listed.is_empty() && total > 0 {
                         div.uk-all-clear {
                             (tabler_icon(ICON_CIRCLE_CHECK))
-                            @if total == 1 {
-                                span { "The monitor is up" }
-                            } @else {
-                                span { (format!("All {total} monitors are up")) }
-                            }
+                            span { (tf("widget.uptimeKuma.allClear", "{count, plural, one {The monitor is up} other {All # monitors are up}}", &[("count", &total)])) }
                         }
                     }
                     div.uk-monitors {
@@ -2196,7 +2370,7 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
                                     div.uk-beats aria-hidden="true" {
                                         @for beat in monitor.get("heartbeats").and_then(Value::as_array).into_iter().flatten() {
                                             @let beat_status = str_at(beat, "status").unwrap_or("unknown");
-                                            @let ping = f64_at(beat, "ping").map(|p| format!(" · {p:.0} ms")).unwrap_or_default();
+                                            @let ping = f64_at(beat, "ping").map(|p| format!(" · {}", format_ms(p))).unwrap_or_default();
                                             span.uk-beat data-status=(beat_status)
                                                 title=(format!("{}{ping}", monitor_status_label(beat_status))) {}
                                         }
@@ -2205,7 +2379,7 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
                                 @if show_ping {
                                     span.uk-ping {
                                         @if let Some(ping) = f64_at(monitor, "ping") {
-                                            (format!("{ping:.0} ms"))
+                                            (format_ms(ping))
                                         }
                                     }
                                 }
@@ -2257,20 +2431,28 @@ fn resolution_label(width: f64, height: f64) -> String {
 }
 
 /// Upstream `getPlaybackStatus` label and badge color.
-fn playback_status(transcoding: Option<&Value>) -> (&'static str, &'static str) {
-    let Some(t) = transcoding else {
-        return ("Direct play", "green");
-    };
-    let flag = |key: &str| t.get(key).and_then(Value::as_bool).unwrap_or(true);
-    match (flag("isVideoDirect"), flag("isAudioDirect")) {
-        (true, true) if t.get("containerChanged").and_then(Value::as_bool) == Some(true) => {
-            ("Direct stream", "teal")
+fn playback_status(transcoding: Option<&Value>) -> (String, &'static str) {
+    let (status, label, color) = match transcoding {
+        None => ("directPlay", "Direct play", "green"),
+        Some(tr) => {
+            let flag = |key: &str| tr.get(key).and_then(Value::as_bool).unwrap_or(true);
+            match (flag("isVideoDirect"), flag("isAudioDirect")) {
+                (true, true)
+                    if tr.get("containerChanged").and_then(Value::as_bool) == Some(true) =>
+                {
+                    ("directStream", "Direct stream", "teal")
+                }
+                (true, true) => ("directPlay", "Direct play", "green"),
+                (false, true) => ("transcodeVideo", "Transcoding video", "orange"),
+                (true, false) => ("transcodeAudio", "Transcoding audio", "yellow"),
+                (false, false) => ("transcoding", "Transcoding", "red"),
+            }
         }
-        (true, true) => ("Direct play", "green"),
-        (false, true) => ("Transcoding video", "orange"),
-        (true, false) => ("Transcoding audio", "yellow"),
-        (false, false) => ("Transcoding", "red"),
-    }
+    };
+    (
+        t(&format!("widget.mediaServer.items.{status}"), label),
+        color,
+    )
 }
 
 fn render_media_sessions(options: &Value, data: &Value) -> Markup {
@@ -2309,9 +2491,9 @@ fn render_media_sessions(options: &Value, data: &Value) -> Markup {
                 table.media-server-table {
                     thead {
                         tr {
-                            th.media-col-user { "User" }
-                            th { "Currently playing" }
-                            th.media-col-status { "Status" }
+                            th.media-col-user { (t("widget.mediaServer.items.user", "User")) }
+                            th { (t("widget.mediaServer.items.currentlyPlaying", "Currently playing")) }
+                            th.media-col-status { (t("widget.mediaServer.items.status", "Status")) }
                         }
                     }
                     tbody {
@@ -2324,8 +2506,10 @@ fn render_media_sessions(options: &Value, data: &Value) -> Markup {
             div.media-server-footer {
                 div.media-server-count {
                     (icon(ICON_VIDEO))
-                    span { (count) " active stream" @if count != 1 { "s" } }
-                    @if let Some(total) = &total_bitrate { span.muted { "Total: " (total) } }
+                    span { (tf("widget.mediaServer.footer.streams", "{count, plural, one {# active stream} other {# active streams}}", &[("count", &count)])) }
+                    @if let Some(total) = &total_bitrate {
+                        span.muted { (tf("widget.mediaServer.footer.totalBitrate", "Total: {bitrate}", &[("bitrate", total)])) }
+                    }
                 }
                 div.media-server-sources {
                     @for (name, kind) in &sources {
@@ -2346,7 +2530,10 @@ fn render_media_session(s: &Value, show_bitrate: bool, show_location: bool) -> M
     let user = s
         .pointer("/user/username")
         .and_then(Value::as_str)
-        .unwrap_or("Unknown user");
+        .map_or_else(
+            || t("widget.mediaServer.items.unknownUser", "Unknown user"),
+            str::to_string,
+        );
     let session_name = str_at(s, "sessionName").unwrap_or("");
     let user_cell = html! {
         td {
@@ -2373,7 +2560,14 @@ fn render_media_session(s: &Value, show_bitrate: bool, show_location: bool) -> M
         p.get("seasonNumber").and_then(Value::as_i64),
         p.get("episodeNumber").and_then(Value::as_i64),
     ) {
-        (Some(season), Some(episode)) => Some(format!("S{season:02} E{episode:02}")),
+        (Some(season), Some(episode)) => Some(tf(
+            "widget.mediaServer.items.seasonEpisode",
+            "S{season} E{episode}",
+            &[
+                ("season", &format!("{season:02}")),
+                ("episode", &format!("{episode:02}")),
+            ],
+        )),
         _ => None,
     };
     let paused = p.pointer("/playback/state").and_then(Value::as_str) == Some("paused");
@@ -2428,9 +2622,9 @@ fn render_media_session(s: &Value, show_bitrate: bool, show_location: bool) -> M
                     span.media-truncate { (title) }
                     @if let Some(se) = &season_episode { span.muted.media-nowrap { (se) } }
                     @if paused {
-                        span.media-paused { "Paused" }
+                        span.media-paused { (t("widget.mediaServer.items.paused", "Paused")) }
                     } @else if let Some(left) = minutes_left {
-                        span.muted.media-nowrap { (format!("{left:.0} min left")) }
+                        span.muted.media-nowrap { (tf("widget.mediaServer.items.remaining", "{minutes} min left", &[("minutes", &format!("{left:.0}"))])) }
                     }
                 }
                 @if let Some(pct) = pct {
@@ -2524,7 +2718,13 @@ fn render_media_release(rel: &Value, options: &Value, poster_layout: bool) -> Ma
         .filter(|l| *l > 0.0)
         .and_then(|l| match kind {
             "movie" | "tv" | "video" | "music" | "article" => {
-                Some((ICON_CLOCK, format!("{:.0}min", (l / 60.0).round())))
+                let minutes = format!("{:.0}", (l / 60.0).round());
+                let label = tf(
+                    "widget.mediaReleases.length.duration",
+                    "{length}min",
+                    &[("length", &minutes)],
+                );
+                Some((ICON_CLOCK, label))
             }
             "book" => Some((ICON_BOOK, format!("{l:.0}"))),
             _ => None,
@@ -3424,5 +3624,38 @@ mod data_widget_tests {
         let options = json!({ "showSource": false, "showType": false });
         let html = render_widget_html(WidgetKind::MediaReleases, "i", &options, &data);
         assert!(!html.contains("Jellyfin") && !html.contains(">movie<"));
+    }
+
+    #[test]
+    fn widget_text_uses_the_translator_with_icu_plurals() {
+        let spanish = std::rc::Rc::new(|key: &str, default: &str| {
+            match key {
+                "widget.mediaServer.items.currentlyPlaying" => "Reproducción en curso",
+                "widget.mediaServer.footer.streams" => {
+                    "{count, plural, one {# retrasmisión activa} other {# retrasmisiones activas}}"
+                }
+                _ => default,
+            }
+            .to_string()
+        });
+        let render = |data: &Value| {
+            super::render_widget_markup_localized(
+                WidgetKind::MediaServer,
+                "i",
+                &json!({}),
+                data,
+                None,
+                spanish.clone(),
+            )
+            .into_string()
+        };
+        let empty = render(&json!({}));
+        assert!(empty.contains("<th>Reproducción en curso</th>"), "{empty}");
+        assert!(empty.contains("0 retrasmisiones activas"), "{empty}");
+        let one = render(&json!({ "sessions": [{ "sessionName": "TV" }] }));
+        assert!(one.contains("1 retrasmisión activa<"), "{one}");
+        // The translator is only active for the localized call.
+        let english = render_widget_html(WidgetKind::MediaServer, "i", &json!({}), &json!({}));
+        assert!(english.contains("<th>Currently playing</th>"), "{english}");
     }
 }

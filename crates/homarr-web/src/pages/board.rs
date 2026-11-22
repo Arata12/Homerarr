@@ -14,7 +14,7 @@ use homarr_db::{
     repos::{boards, settings, users},
 };
 use homarr_definitions::{BoardPermission, WidgetKind};
-use homarr_widgets::{refresh_interval, render_widget_markup};
+use homarr_widgets::{refresh_interval, render_widget_markup_localized};
 use maud::{html, Markup, PreEscaped};
 use serde_json::{json, Value};
 
@@ -589,6 +589,8 @@ fn request_origin(state: &AppState, headers: &HeaderMap) -> Option<String> {
 /// Inner card of one board item. Shared by the board page and the live-refresh card endpoint
 /// so both always produce identical markup.
 fn render_item_card(
+    web: &WebState,
+    locale: &str,
     item: &ItemRecord,
     data: HomarrResult<Value>,
     request_origin: Option<&str>,
@@ -602,7 +604,8 @@ fn render_item_card(
     ) {
         obj.insert("title".into(), Value::String(title.to_string()));
     }
-    render_widget_markup(kind, &item.id, &options, &data, request_origin)
+    let translate = web.i18n.widget_translator(locale);
+    render_widget_markup_localized(kind, &item.id, &options, &data, request_origin, translate)
 }
 
 /// `GET /boards/{name}/items/{item_id}/card`: the inner card HTML of one item, for live refresh.
@@ -638,7 +641,14 @@ pub async fn board_item_card(
         .widgets
         .resolve_widget_data(kind, &item.options, &item.integration_ids)
         .await;
-    let card = render_item_card(item, data, request_origin(state, &headers).as_deref());
+    let locale = web.i18n.negotiate(&headers);
+    let card = render_item_card(
+        &web,
+        &locale,
+        item,
+        data,
+        request_origin(state, &headers).as_deref(),
+    );
     (
         [(header::CACHE_CONTROL, "no-store")],
         Html(card.into_string()),
@@ -750,7 +760,7 @@ async fn render_full_board(
                 urlencoding(&item.id)
             )
         });
-        let rendered_card = render_item_card(item, result, request_origin.as_deref());
+        let rendered_card = render_item_card(web, &locale, item, result, request_origin.as_deref());
 
         let mut extra_classes = String::new();
         for c in safe_css_classes(&item.advanced_options) {

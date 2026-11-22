@@ -115,6 +115,12 @@ impl I18nCatalog {
         "en".to_string()
     }
 
+    /// Widget-string lookup bound to `locale`, for `homarr_widgets::render_widget_markup_localized`.
+    pub fn widget_translator(&self, locale: &str) -> homarr_widgets::Translator {
+        let (catalog, locale) = (self.clone(), locale.to_string());
+        std::rc::Rc::new(move |key: &str, default: &str| catalog.t(&locale, key, default))
+    }
+
     pub fn t(&self, locale: &str, dotted_key: &str, fallback: &str) -> String {
         if let Some(root) = self.get_locale(locale) {
             if let Some(val) = lookup_dotted(root.as_ref(), dotted_key) {
@@ -136,5 +142,6 @@ fn lookup_dotted<'a>(mut curr: &'a Value, path: &str) -> Option<&'a str> {
     for part in path.split('.') {
         curr = curr.as_object()?.get(part)?;
     }
-    curr.as_str()
+    // Untranslated keys are exported as "", which must fall back like a missing key.
+    curr.as_str().filter(|s| !s.is_empty())
 }

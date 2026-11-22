@@ -10,7 +10,9 @@ use homarr_db::repos::{
     search_engines, users,
 };
 use homarr_definitions::{integration::all_integration_defs, WidgetKind};
-use homarr_widgets::{all_widget_metadata, get_widget_metadata, render_widget_markup, safe_url};
+use homarr_widgets::{
+    all_widget_metadata, get_widget_metadata, render_widget_markup_localized, safe_url,
+};
 use maud::{html, Markup};
 use serde_json::json;
 
@@ -1251,7 +1253,15 @@ pub async fn widget_preview_page(
         .resolve_widget_data(kind, &meta.default_options, &[])
         .await
         .unwrap_or_else(|_| json!({}));
-    let card = render_widget_markup(kind, "preview", &meta.default_options, &data, None);
+    let translate = web.i18n.widget_translator(&web.i18n.negotiate(&headers));
+    let card = render_widget_markup_localized(
+        kind,
+        "preview",
+        &meta.default_options,
+        &data,
+        None,
+        translate,
+    );
 
     let body = html! {
         div.page-header { h1.page-title { "Widget Preview: " (meta.name) } }
