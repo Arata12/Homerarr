@@ -7,6 +7,7 @@ use homarr_api::{api_router, limits, AppState};
 use homarr_common::SecretCrypto;
 use homarr_core::{init_logging, AppConfig, CertificateManager, DatabaseDriver, HttpClientFactory};
 use homarr_db::{
+    legacy::upgrade_legacy_sqlite_if_needed,
     seed::{seed_defaults, seed_demo},
     Database,
 };
@@ -193,8 +194,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http = HttpClientFactory::new(&certs)?;
 
     ensure_sqlite_parent_dir(config.db_driver, &config.db_url);
+    if config.db_driver == DatabaseDriver::Sqlite && config.legacy_db_auto_migrate {
+        if let Err(err) = upgrade_legacy_sqlite_if_needed(&config.db_url).await {
+            tracing::error!(error = %err, "Upstream Homarr database migration failed");
+            return Err(err.into());
+        }
+    }
     let db = Database::connect(config.db_driver, &config.db_url).await?;
     db.migrate().await?;
+    // Trusted certificate hostnames (e.g. self-signed Proxmox on an IP) apply to outbound HTTP.
+    let trusted = homarr_db::repos::settings::list_trusted_hostnames(&db).await?;
+    let pins = trusted
+        .iter()
+        .map(|t| (t.hostname.as_str(), t.thumbprint.as_str()));
+    http.set_trusted_hostnames(pins)?;
 
     if config.demo_mode {
         seed_demo(&db, &crypto).await?;

@@ -292,7 +292,7 @@ fn render_widget(
         WidgetKind::Releases => render_release(data),
         WidgetKind::DockerContainers => render_docker(data),
         WidgetKind::Downloads => render_downloads(data),
-        WidgetKind::MediaServer => render_media_sessions(data),
+        WidgetKind::MediaServer => render_media_sessions(options, data),
         WidgetKind::MediaRequestsRequestList | WidgetKind::MediaRequestsRequestStats => {
             render_media_requests(kind, options, data)
         }
@@ -300,9 +300,8 @@ fn render_widget(
         WidgetKind::DnsHoleSummary | WidgetKind::DnsHoleControls => {
             render_dns_hole(kind, options, data)
         }
-        WidgetKind::HealthMonitoring | WidgetKind::SystemResources | WidgetKind::SystemDisks => {
-            render_health(kind, data)
-        }
+        WidgetKind::HealthMonitoring => render_health_monitoring(options, data),
+        WidgetKind::SystemResources | WidgetKind::SystemDisks => render_health(kind, data),
         WidgetKind::SmartHomeEntityState
         | WidgetKind::SmartHomeExecuteAutomation
         | WidgetKind::SmartHomeControls => render_smart_home(data),
@@ -310,7 +309,7 @@ fn render_widget(
         WidgetKind::IndexerManager => render_indexers(data),
         WidgetKind::Ups => render_ups(data),
         WidgetKind::MediaMissing => render_media_missing(data),
-        WidgetKind::MediaReleases => render_media_releases(data),
+        WidgetKind::MediaReleases => render_media_releases(options, data),
         WidgetKind::MediaTranscoding => render_media_transcoding(data),
         WidgetKind::Firewall => render_firewall(data),
         WidgetKind::Vpn => render_vpn(data),
@@ -321,6 +320,7 @@ fn render_widget(
         WidgetKind::AnchorNote => render_anchor_note(data),
         WidgetKind::Stats => render_stats(data),
         WidgetKind::CustomApi => render_custom_api(data),
+        WidgetKind::UptimeKuma if data.get("pages").is_some() => render_uptime_kuma(options, data),
         WidgetKind::Assistant => render_assistant(options),
         _ if data.get("error").and_then(|v| v.as_str()).is_some() => render_generic(data),
         _ if data.get("stats").is_some() => render_stats_with_extras(kind, data),
@@ -1125,63 +1125,6 @@ fn render_downloads(data: &Value) -> Markup {
     }
 }
 
-fn render_media_sessions(data: &Value) -> Markup {
-    let sessions = data
-        .get("sessions")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    if sessions.is_empty() {
-        return empty_box("Nothing playing right now");
-    }
-    html! {
-        div.media-sessions {
-            @for s in sessions.iter().take(6) {
-                @let item = s.get("itemName").and_then(|v| v.as_str()).unwrap_or("");
-                @let series = s
-                    .get("seriesName")
-                    .and_then(|v| v.as_str())
-                    .filter(|v| !v.trim().is_empty());
-                @let user = s.get("username").and_then(|v| v.as_str()).unwrap_or("");
-                @let client = s
-                    .get("clientName")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Player");
-                @let is_paused = s.get("isPaused").and_then(|v| v.as_bool()).unwrap_or(false);
-                @let pct = s
-                    .get("progressPercent")
-                    .and_then(|v| v.as_f64())
-                    .unwrap_or(0.0)
-                    .clamp(0.0, 100.0);
-                div.media-session-card {
-                    div.media-session-top {
-                        div {
-                            @if let Some(sr) = series {
-                                div.media-title { (sr) }
-                                div.media-sub { (item) }
-                            } @else {
-                                div.media-title { (item) }
-                            }
-                        }
-                        @if is_paused {
-                            span.badge.muted { "Paused" }
-                        } @else {
-                            span.badge.up { "Playing" }
-                        }
-                    }
-                    div.progress-track {
-                        div.progress-fill style=(format!("width:{pct:.1}%")) {}
-                    }
-                    div.media-meta {
-                        span { (user) " · " (client) }
-                        span { (format!("{pct:.0}%")) }
-                    }
-                }
-            }
-        }
-    }
-}
-
 fn stat_pill(label: &str, value: impl maud::Render) -> Markup {
     html! { div.stat-pill { span.label { (label) } strong { (value) } } }
 }
@@ -1492,9 +1435,20 @@ fn render_donut_gauge(label: &str, pct: f64, sub: &str, color_var: &str) -> Mark
 }
 
 fn render_health(_kind: WidgetKind, data: &Value) -> Markup {
-    let Some(h) = data.get("health") else {
-        return empty_box("Health telemetry unavailable");
-    };
+    if let Some(err_html) = render_error_box(data) {
+        return err_html;
+    }
+    match data.get("health") {
+        Some(h) => render_host_health(&Value::Null, h),
+        None => empty_box("Health telemetry unavailable"),
+    }
+}
+
+fn render_host_health(options: &Value, h: &Value) -> Markup {
+    let fahrenheit = opt_flag(options, "fahrenheit", false);
+    let show_cpu = opt_flag(options, "cpu", true);
+    let show_memory = opt_flag(options, "memory", true);
+    let show_disks = opt_flag(options, "fileSystem", true);
     let name = h
         .get("systemName")
         .and_then(|v| v.as_str())
@@ -1508,7 +1462,7 @@ fn render_health(_kind: WidgetKind, data: &Value) -> Markup {
     let cpu_sub = h
         .get("cpuTempC")
         .and_then(|v| v.as_f64())
-        .map(|t| format!("{t:.0}°C"))
+        .map(|t| format_temperature(t, fahrenheit))
         .unwrap_or_else(|| "Load avg".to_string());
     let mem_used = h
         .get("memoryUsedBytes")
@@ -1524,7 +1478,7 @@ fn render_health(_kind: WidgetKind, data: &Value) -> Markup {
     let disks = h
         .get("disks")
         .and_then(|v| v.as_array())
-        .filter(|d| !d.is_empty());
+        .filter(|d| show_disks && !d.is_empty());
     let nodes = h
         .get("nodes")
         .and_then(|v| v.as_array())
@@ -1535,9 +1489,15 @@ fn render_health(_kind: WidgetKind, data: &Value) -> Markup {
             strong { (name) }
             span.badge.up { "Up " (uptime) }
         }
-        div.health-gauges {
-            (render_donut_gauge("CPU", cpu, &cpu_sub, "var(--mantine-blue)"))
-            (render_donut_gauge("Memory", mem_pct, &mem_sub, "var(--mantine-violet)"))
+        @if show_cpu || show_memory {
+            div.health-gauges {
+                @if show_cpu {
+                    (render_donut_gauge("CPU", cpu, &cpu_sub, "var(--mantine-blue)"))
+                }
+                @if show_memory {
+                    (render_donut_gauge("Memory", mem_pct, &mem_sub, "var(--mantine-violet)"))
+                }
+            }
         }
         @if let Some(disks) = disks {
             div.health-disks {
@@ -1573,6 +1533,626 @@ fn render_health(_kind: WidgetKind, data: &Value) -> Markup {
                     span.node-pill {
                         span.dot.(if online { "up" } else { "down" }) {}
                         (n.get("name").and_then(|v| v.as_str()).unwrap_or(""))
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn str_at<'a>(value: &'a Value, key: &str) -> Option<&'a str> {
+    value.get(key).and_then(Value::as_str)
+}
+
+fn f64_at(value: &Value, key: &str) -> Option<f64> {
+    value.get(key).and_then(Value::as_f64)
+}
+
+/// Boolean widget option; missing or invalid values use the upstream default.
+fn opt_flag(options: &Value, key: &str, default: bool) -> bool {
+    options.get(key).and_then(Value::as_bool).unwrap_or(default)
+}
+
+/// One line per integration that failed in a multi-integration widget.
+fn render_integration_errors(data: &Value) -> Markup {
+    let errors = data.get("errors").and_then(Value::as_array);
+    html! {
+        @for err in errors.into_iter().flatten() {
+            div.widget-error-line {
+                span.dot.down {}
+                strong { (str_at(err, "integrationName").unwrap_or("Integration")) }
+                span.muted { (str_at(err, "error").unwrap_or("Unavailable")) }
+            }
+        }
+    }
+}
+
+fn has_integration_errors(data: &Value) -> bool {
+    data.get("errors")
+        .and_then(Value::as_array)
+        .is_some_and(|e| !e.is_empty())
+}
+
+fn format_temperature(celsius: f64, fahrenheit: bool) -> String {
+    if fahrenheit {
+        format!("{:.0}°F", celsius * 9.0 / 5.0 + 32.0)
+    } else {
+        format!("{celsius:.0}°C")
+    }
+}
+
+fn render_health_monitoring(options: &Value, data: &Value) -> Markup {
+    let items = data
+        .get("items")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    // Without client-side tabs, the default tab decides which kind is shown first.
+    let cluster_first = str_at(options, "defaultTab") == Some("cluster");
+    let mut ordered: Vec<&Value> = items.iter().collect();
+    ordered.sort_by_key(|item| item.get("cluster").is_some() != cluster_first);
+    html! {
+        (render_integration_errors(data))
+        @if items.is_empty() && !has_integration_errors(data) {
+            (empty_box("Health telemetry unavailable"))
+        }
+        @for item in ordered {
+            @let name = str_at(item, "integrationName").unwrap_or("");
+            div.health-item {
+                @if let Some(cluster) = item.get("cluster") {
+                    (render_cluster_health(options, name, cluster))
+                } @else if let Some(health) = item.get("health") {
+                    (render_host_health(options, health))
+                }
+            }
+        }
+    }
+}
+
+struct ClusterSection<'a> {
+    title: &'static str,
+    resources: &'a [Value],
+    is_storage: bool,
+}
+
+fn render_cluster_health(options: &Value, name: &str, cluster: &Value) -> Markup {
+    let list = |key: &str| {
+        cluster
+            .get(key)
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default()
+    };
+    let nodes = list("nodes");
+    let running_nodes: Vec<&Value> = nodes.iter().filter(|n| resource_running(n)).collect();
+    let sum = |a: &str, b: &str| -> f64 { running_nodes.iter().map(|n| nested_f64(n, a, b)).sum() };
+    let cores = sum("cpu", "cores");
+    let used_cpu: f64 = running_nodes
+        .iter()
+        .map(|n| nested_f64(n, "cpu", "utilization") * nested_f64(n, "cpu", "cores"))
+        .sum();
+    let used_mem = sum("memory", "used");
+    let total_mem = sum("memory", "total");
+    let cpu_pct = if cores > 0.0 {
+        used_cpu / cores * 100.0
+    } else {
+        0.0
+    };
+    let mem_pct = if total_mem > 0.0 {
+        used_mem / total_mem * 100.0
+    } else {
+        0.0
+    };
+    let uptime = nodes
+        .iter()
+        .filter_map(|n| f64_at(n, "uptime"))
+        .fold(0.0_f64, f64::max);
+
+    let show_cpu = opt_flag(options, "cpu", true);
+    let show_memory = opt_flag(options, "memory", true);
+    let any_running_is_enough = str_at(options, "sectionIndicatorRequirement") == Some("any");
+    let visible: Vec<&str> = options
+        .get("visibleClusterSections")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_else(|| vec!["node", "qemu", "lxc", "storage"]);
+    let sections: Vec<ClusterSection> = visible
+        .iter()
+        .filter_map(|section| {
+            let (title, key) = match *section {
+                "node" => ("Nodes", "nodes"),
+                "qemu" => ("Virtual machines", "vms"),
+                "lxc" => ("Containers", "lxcs"),
+                "storage" => ("Storage", "storages"),
+                _ => return None,
+            };
+            Some(ClusterSection {
+                title,
+                resources: list(key),
+                is_storage: key == "storages",
+            })
+        })
+        .collect();
+
+    html! {
+        div.health-host-row {
+            strong { (name) }
+            @if opt_flag(options, "showUptime", true) {
+                span.badge.up { "Up " (format_uptime(uptime as u64)) }
+            }
+        }
+        @if show_cpu || show_memory {
+            div.health-gauges {
+                @if show_cpu {
+                    (render_donut_gauge("CPU", cpu_pct, &format!("{cores:.0} cores"), "var(--mantine-blue)"))
+                }
+                @if show_memory {
+                    (render_donut_gauge("Memory", mem_pct,
+                        &format!("{} / {} GiB", format_gib(used_mem as u64), format_gib(total_mem as u64)),
+                        "var(--mantine-violet)"))
+                }
+            }
+        }
+        @for (index, section) in sections.iter().enumerate() {
+            @let active = section.resources.iter().filter(|r| resource_running(r)).count();
+            @let total = section.resources.len();
+            @let healthy = active == total || (any_running_is_enough && active > 0);
+            details.cluster-section open[index == 0] {
+                summary {
+                    span { (section.title) }
+                    span.badge.(if healthy { "up" } else { "warn" }) { (active) "/" (total) }
+                }
+                @if total > 0 {
+                    table.cluster-table {
+                        thead {
+                            tr {
+                                th { "Name" }
+                                @if section.is_storage {
+                                    th { "Node" }
+                                    th { "Used" }
+                                } @else {
+                                    th { "CPU" }
+                                    th { "RAM" }
+                                }
+                            }
+                        }
+                        tbody {
+                            @for resource in section.resources {
+                                @let running = resource_running(resource);
+                                tr {
+                                    td {
+                                        span.dot.(if running { "up" } else { "down" }) {}
+                                        " " (str_at(resource, "name").unwrap_or(""))
+                                    }
+                                    @if section.is_storage {
+                                        @let used = f64_at(resource, "used").unwrap_or(0.0);
+                                        @let size = f64_at(resource, "total").unwrap_or(0.0);
+                                        td { (str_at(resource, "node").unwrap_or("")) }
+                                        td { (format_ratio_pct(used, size)) }
+                                    } @else {
+                                        td { (format!("{:.1}%", nested_f64(resource, "cpu", "utilization") * 100.0)) }
+                                        td { (format_ratio_pct(nested_f64(resource, "memory", "used"), nested_f64(resource, "memory", "total"))) }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn resource_running(resource: &Value) -> bool {
+    resource.get("isRunning").and_then(Value::as_bool) == Some(true)
+}
+
+fn nested_f64(value: &Value, outer: &str, inner: &str) -> f64 {
+    value
+        .get(outer)
+        .and_then(|v| f64_at(v, inner))
+        .unwrap_or(0.0)
+}
+
+fn monitor_status(monitor: &Value) -> &str {
+    str_at(monitor, "status").unwrap_or("unknown")
+}
+
+/// Problems first, like upstream's status sort.
+fn monitor_rank(monitor: &Value) -> u8 {
+    match monitor_status(monitor) {
+        "down" => 0,
+        "pending" => 1,
+        "maintenance" => 2,
+        "up" => 4,
+        _ => 3,
+    }
+}
+
+fn monitor_name(monitor: &Value) -> String {
+    str_at(monitor, "name").unwrap_or("").to_lowercase()
+}
+
+fn format_ratio_pct(used: f64, total: f64) -> String {
+    if total > 0.0 {
+        format!("{:.1}%", (used / total * 100.0).clamp(0.0, 100.0))
+    } else {
+        "-".to_string()
+    }
+}
+
+fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
+    let pages = data
+        .get("pages")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    // A monitor can appear in several groups of one status page.
+    let mut monitors: Vec<&Value> = Vec::new();
+    let mut seen: Vec<(usize, i64)> = Vec::new();
+    for (page_index, page) in pages.iter().enumerate() {
+        let groups = page
+            .pointer("/page/groups")
+            .and_then(Value::as_array)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        for monitor in groups
+            .iter()
+            .filter_map(|g| g.get("monitors").and_then(Value::as_array))
+            .flatten()
+        {
+            let key = (
+                page_index,
+                monitor.get("id").and_then(Value::as_i64).unwrap_or(-1),
+            );
+            if !seen.contains(&key) {
+                seen.push(key);
+                monitors.push(monitor);
+            }
+        }
+    }
+    let up = monitors
+        .iter()
+        .filter(|m| monitor_status(m) == "up")
+        .count();
+    let down = monitors
+        .iter()
+        .filter(|m| monitor_status(m) == "down")
+        .count();
+    let uptimes: Vec<f64> = monitors
+        .iter()
+        .filter(|m| !matches!(monitor_status(m), "stale" | "unknown"))
+        .filter_map(|m| f64_at(m, "uptime24h"))
+        .collect();
+    let average_uptime =
+        (!uptimes.is_empty()).then(|| uptimes.iter().sum::<f64>() / uptimes.len() as f64);
+    let (overall_class, overall) = if monitors.is_empty() {
+        ("muted", "No monitors".to_string())
+    } else if up == monitors.len() {
+        ("up", "All up".to_string())
+    } else if down > 0 {
+        ("down", format!("{down} down"))
+    } else {
+        ("warn", format!("{} not up", monitors.len() - up))
+    };
+
+    let only_problems = opt_flag(options, "showOnlyProblems", false);
+    let show_uptime = opt_flag(options, "showUptime", true);
+    let show_ping = opt_flag(options, "showResponseTime", true);
+    let mut listed: Vec<&Value> = monitors
+        .iter()
+        .copied()
+        .filter(|m| !only_problems || monitor_status(m) != "up")
+        .collect();
+    match str_at(options, "sortBy") {
+        Some("name") => listed.sort_by_key(|m| monitor_name(m)),
+        // Lowest uptime first; monitors without data last.
+        Some("uptime") => listed.sort_by(|a, b| {
+            f64_at(a, "uptime24h")
+                .unwrap_or(101.0)
+                .total_cmp(&f64_at(b, "uptime24h").unwrap_or(101.0))
+        }),
+        _ => listed.sort_by_key(|m| (monitor_rank(m), monitor_name(m))),
+    }
+
+    html! {
+        (render_integration_errors(data))
+        @if !pages.is_empty() {
+            div.health-host-row {
+                strong { (up) "/" (monitors.len()) " up" }
+                span.badge.(overall_class) { (overall) }
+            }
+            @if let Some(uptime) = average_uptime.filter(|_| show_uptime) {
+                div.media-meta { span { "Uptime (24h)" } span { (format!("{uptime:.2}%")) } }
+            }
+            @if !opt_flag(options, "summaryOnly", false) {
+                ul.compact-list.uptime-monitors {
+                    @for monitor in listed {
+                        @let state = monitor_status(monitor);
+                        li {
+                            span {
+                                span.dot.(if state == "up" { "up" } else { "down" }) {}
+                                " " (str_at(monitor, "name").unwrap_or(""))
+                            }
+                            span.muted {
+                                @if show_ping {
+                                    @if let Some(ping) = f64_at(monitor, "ping") {
+                                        (format!("{ping:.0} ms")) " "
+                                    }
+                                }
+                                @if show_uptime {
+                                    @if let Some(uptime) = f64_at(monitor, "uptime24h") {
+                                        (format!("{uptime:.1}%"))
+                                    }
+                                }
+                                @if state != "up" {
+                                    " " span.badge.down { (state) }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        } @else if !has_integration_errors(data) {
+            (empty_box("No monitors"))
+        }
+    }
+}
+
+/// `formatBitRate` from upstream: decimal units, one fraction digit, no trailing `.0`.
+fn format_bitrate_kbps(kbps: f64) -> Option<String> {
+    if !kbps.is_finite() || kbps <= 0.0 {
+        return None;
+    }
+    let units = ["b/s", "Kb/s", "Mb/s", "Gb/s", "Tb/s"];
+    let mut value = kbps * 1000.0;
+    let mut index = 0;
+    while value >= 999.95 && index < units.len() - 1 {
+        value /= 1000.0;
+        index += 1;
+    }
+    let text = format!("{value:.1}");
+    let text = text.strip_suffix(".0").unwrap_or(&text);
+    Some(format!("{text} {}", units[index]))
+}
+
+/// Resolution tier label as Plex/Jellyfin show it (a 1920x804 encode is still "1080p").
+fn resolution_label(width: f64, height: f64) -> String {
+    let (short, long) = if height > width {
+        (width, height)
+    } else {
+        (height, width)
+    };
+    let effective = short.max((long * 9.0 / 16.0).round());
+    [4320.0, 2160.0, 1440.0, 1080.0, 720.0, 480.0, 360.0, 240.0]
+        .into_iter()
+        .find(|tier| effective >= tier * 0.9)
+        .map_or_else(|| format!("{effective:.0}p"), |tier| format!("{tier:.0}p"))
+}
+
+fn playback_status(transcoding: Option<&Value>) -> (&'static str, bool) {
+    let Some(t) = transcoding else {
+        return ("Direct play", false);
+    };
+    let flag = |key: &str| t.get(key).and_then(Value::as_bool).unwrap_or(true);
+    match (flag("isVideoDirect"), flag("isAudioDirect")) {
+        (true, true) if t.get("containerChanged").and_then(Value::as_bool) == Some(true) => {
+            ("Direct stream", false)
+        }
+        (true, true) => ("Direct play", false),
+        (false, true) => ("Transcode (video)", true),
+        (true, false) => ("Transcode (audio)", true),
+        (false, false) => ("Transcoding", true),
+    }
+}
+
+fn render_media_sessions(options: &Value, data: &Value) -> Markup {
+    let sessions = data
+        .get("sessions")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let show_bitrate = opt_flag(options, "showBitrate", true);
+    let show_location = opt_flag(options, "showLocation", true);
+    let playing: Vec<&Value> = sessions
+        .iter()
+        .filter(|s| s.get("currentlyPlaying").is_some_and(|p| !p.is_null()))
+        .collect();
+    let transcoding = playing
+        .iter()
+        .filter(|s| playback_status(s.pointer("/currentlyPlaying/metadata/transcoding")).1)
+        .count();
+    let total_kbps: f64 = playing
+        .iter()
+        .filter_map(|s| {
+            s.pointer("/currentlyPlaying/metadata/bitrateKbps")?
+                .as_f64()
+        })
+        .sum();
+    let total_bitrate = format_bitrate_kbps(total_kbps).filter(|_| show_bitrate);
+
+    html! {
+        (render_integration_errors(data))
+        @if sessions.is_empty() {
+            @if !has_integration_errors(data) {
+                (empty_box("Nothing playing right now"))
+            }
+        } @else {
+            div.media-meta.media-summary {
+                span {
+                    (playing.len()) " active stream" @if playing.len() != 1 { "s" }
+                    @if transcoding > 0 { " · " (transcoding) " transcoding" }
+                }
+                @if let Some(total) = &total_bitrate { span { "Total " (total) } }
+            }
+            div.media-sessions {
+                @for s in sessions.iter().take(8) {
+                    (render_media_session(s, show_bitrate, show_location))
+                }
+            }
+        }
+    }
+}
+
+fn render_media_session(s: &Value, show_bitrate: bool, show_location: bool) -> Markup {
+    let user = s
+        .pointer("/user/username")
+        .and_then(Value::as_str)
+        .unwrap_or("");
+    let client = str_at(s, "sessionName").unwrap_or("Player");
+    let source = str_at(s, "integrationName");
+    let Some(p) = s.get("currentlyPlaying").filter(|p| !p.is_null()) else {
+        return html! {
+            div.media-session-card {
+                div.media-session-top {
+                    div.media-title { (client) }
+                    span.badge.muted { "Idle" }
+                }
+                div.media-meta { span { (user) } }
+            }
+        };
+    };
+    let title = str_at(p, "name").unwrap_or("");
+    let season_episode = match (
+        p.get("seasonNumber").and_then(Value::as_i64),
+        p.get("episodeNumber").and_then(Value::as_i64),
+    ) {
+        (Some(season), Some(episode)) => Some(format!("S{season:02}E{episode:02}")),
+        _ => None,
+    };
+    let subtitle: Vec<String> = season_episode
+        .into_iter()
+        .chain(str_at(p, "episodeName").map(str::to_string))
+        .chain(str_at(p, "albumName").map(str::to_string))
+        .collect();
+    let state = p.pointer("/playback/state").and_then(Value::as_str);
+    let position = p.pointer("/playback/positionMs").and_then(Value::as_f64);
+    let duration = p
+        .pointer("/playback/durationMs")
+        .and_then(Value::as_f64)
+        .filter(|d| *d > 0.0);
+    let pct = match (position, duration) {
+        (Some(pos), Some(dur)) => (pos / dur * 100.0).clamp(0.0, 100.0),
+        _ => 0.0,
+    };
+    // The legacy mock reports a percentage, not milliseconds; its "duration" is exactly 100.
+    let minutes_left = match (position, duration) {
+        (Some(pos), Some(dur)) if dur != 100.0 => Some(((dur - pos) / 60_000.0).round().max(0.0)),
+        _ => None,
+    };
+    let metadata = p.get("metadata").filter(|m| !m.is_null());
+    let (status, is_transcoding) = playback_status(
+        metadata
+            .and_then(|m| m.get("transcoding"))
+            .filter(|t| !t.is_null()),
+    );
+    let resolution = metadata
+        .and_then(|m| {
+            m.pointer("/transcoding/resolution")
+                .filter(|r| !r.is_null())
+                .or_else(|| m.pointer("/video/resolution"))
+        })
+        .and_then(|r| Some(resolution_label(f64_at(r, "width")?, f64_at(r, "height")?)));
+    let bitrate = metadata
+        .and_then(|m| f64_at(m, "bitrateKbps"))
+        .and_then(format_bitrate_kbps)
+        .filter(|_| show_bitrate);
+    let location = str_at(p, "location").filter(|_| show_location);
+
+    html! {
+        div.media-session-card {
+            div.media-session-top {
+                div {
+                    div.media-title { (title) }
+                    @if !subtitle.is_empty() {
+                        div.media-sub { (subtitle.join(" · ")) }
+                    }
+                }
+                @match state {
+                    Some("paused") => span.badge.muted { "Paused" },
+                    Some("buffering") => span.badge.warn { "Buffering" },
+                    _ => span.badge.up { "Playing" },
+                }
+            }
+            div.progress-track {
+                div.progress-fill style=(format!("width:{pct:.1}%")) {}
+            }
+            div.media-meta {
+                span { (user) " · " (client) @if let Some(src) = source { " · " (src) } }
+                span {
+                    @if let Some(left) = minutes_left { (format!("{left:.0} min left")) }
+                    @else { (format!("{pct:.0}%")) }
+                }
+            }
+            div.media-tags {
+                span.badge.(if is_transcoding { "warn" } else { "up" }) { (status) }
+                @if let Some(loc) = location { span.badge { (loc.to_uppercase()) } }
+                @if let Some(res) = &resolution { span.badge { (res) } }
+                @if let Some(rate) = &bitrate { span.badge { (rate) } }
+            }
+        }
+    }
+}
+
+fn render_media_releases(options: &Value, data: &Value) -> Markup {
+    let releases = data
+        .get("releases")
+        .and_then(Value::as_array)
+        .map(Vec::as_slice)
+        .unwrap_or_default();
+    let poster_layout = str_at(options, "layout") == Some("poster");
+    let show_type = opt_flag(options, "showType", true);
+    let show_source = opt_flag(options, "showSource", true);
+    let show_description = opt_flag(options, "showDescriptionTooltip", true);
+    html! {
+        (render_integration_errors(data))
+        @if releases.is_empty() {
+            @if !has_integration_errors(data) {
+                (empty_box("No recent media releases"))
+            }
+        } @else {
+            ul.media-releases.(if poster_layout { "is-poster" } else { "is-backdrop" }) {
+                @for rel in releases.iter().take(30) {
+                    @let title = str_at(rel, "title").unwrap_or("Untitled");
+                    @let sub = str_at(rel, "subtitle").filter(|s| !s.trim().is_empty());
+                    @let href = safe_url(str_at(rel, "href").unwrap_or("#"));
+                    @let image = rel
+                        .pointer(if poster_layout { "/imageUrls/poster" } else { "/imageUrls/backdrop" })
+                        .and_then(Value::as_str)
+                        .map(safe_url)
+                        .filter(|u| *u != "#");
+                    @let date = str_at(rel, "releaseDate")
+                        .map(|s| s.chars().take(10).collect::<String>())
+                        .unwrap_or_default();
+                    @let description = str_at(rel, "description").filter(|_| show_description);
+                    @let genres = rel
+                        .get("tags")
+                        .and_then(Value::as_array)
+                        .map(|t| t.iter().filter_map(Value::as_str).take(3).collect::<Vec<_>>().join(", "))
+                        .filter(|g| !g.is_empty());
+                    li.media-release title=[description] {
+                        @if let Some(src) = image {
+                            img.media-release-thumb src=(src) alt="" loading="lazy";
+                        }
+                        div.media-release-text {
+                            @if href == "#" {
+                                span.media-title { (title) }
+                            } @else {
+                                a.media-title href=(href) target="_blank" rel="noopener noreferrer" { (title) }
+                            }
+                            @if let Some(s) = sub { div.media-sub { (s) } }
+                            div.media-tags {
+                                span.badge { (date) }
+                                @if show_type {
+                                    @if let Some(kind) = str_at(rel, "type") { span.badge { (kind) } }
+                                }
+                                @if let Some(rating) = str_at(rel, "rating") { span.badge { "★ " (rating) } }
+                                @if show_source {
+                                    @if let Some(src) = str_at(rel, "integrationName") { span.badge.muted { (src) } }
+                                }
+                            }
+                            @if let Some(g) = genres { div.media-sub { (g) } }
+                        }
                     }
                 }
             }
@@ -1755,56 +2335,6 @@ fn render_stats_with_extras(kind: WidgetKind, data: &Value) -> Markup {
 
 fn render_error_box(data: &Value) -> Option<Markup> {
     data.get("error").and_then(|v| v.as_str()).map(empty_box)
-}
-
-fn render_media_releases(data: &Value) -> Markup {
-    if let Some(err_html) = render_error_box(data) {
-        return err_html;
-    }
-    let releases = data
-        .get("releases")
-        .and_then(|v| v.as_array())
-        .cloned()
-        .unwrap_or_default();
-    if releases.is_empty() {
-        return empty_box("No recent media releases");
-    }
-    html! {
-        ul.compact-list {
-            @for rel in releases.iter().take(6) {
-                @let title = rel
-                    .get("title")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("Untitled");
-                @let sub = rel
-                    .get("subtitle")
-                    .and_then(|v| v.as_str())
-                    .filter(|s| !s.trim().is_empty());
-                @let href = safe_url(rel.get("href").and_then(|v| v.as_str()).unwrap_or("#"));
-                @let date = rel
-                    .get("releaseDate")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.chars().take(10).collect::<String>())
-                    .unwrap_or_default();
-                @let label = html! {
-                    (title)
-                    @if let Some(s) = sub {
-                        " "
-                        span.muted { (s) }
-                    }
-                };
-                li {
-                    @if href == "#" {
-                        span { (label) }
-                    } @else {
-                        a href=(href) target="_blank" rel="noopener noreferrer" { (label) }
-                    }
-                    " "
-                    span.badge { (date) }
-                }
-            }
-        }
-    }
 }
 
 fn render_media_missing(data: &Value) -> Markup {
@@ -2167,5 +2697,195 @@ mod interactive_widget_tests {
 
         let recent = requests(json!({ "recentDays": 7 }), &data);
         assert!(!recent.contains("Andor"));
+    }
+}
+
+#[cfg(test)]
+mod data_widget_tests {
+    use homarr_definitions::WidgetKind;
+    use homarr_integrations::capabilities::health_monitoring::ClusterHealthMonitoring;
+    use serde_json::{json, Value};
+
+    use super::render_widget_html;
+
+    fn compute(kind: &str, name: &str, running: bool, cpu: f64, mem: f64) -> Value {
+        json!({
+            "type": kind,
+            "name": name,
+            "node": "pve",
+            "id": format!("{kind}/{name}"),
+            "isRunning": running,
+            "status": if running { "running" } else { "stopped" },
+            "cpu": { "utilization": cpu, "cores": 4.0 },
+            "memory": { "used": mem, "total": 8.0 },
+            "storage": { "used": 1.0, "total": 2.0 },
+            "network": {},
+            "uptime": 90_061.0,
+        })
+    }
+
+    #[test]
+    fn proxmox_cluster_health_renders_nodes_and_sections() {
+        let mut vm_running = compute("qemu", "web", true, 0.1, 2.0);
+        vm_running["vmId"] = json!(100);
+        let mut vm_stopped = compute("qemu", "old", false, 0.0, 0.0);
+        vm_stopped["vmId"] = json!(101);
+        let mut lxc = compute("lxc", "dns", true, 0.05, 1.0);
+        lxc["vmId"] = json!(102);
+        // Round-trip through the integration type so the fixture matches its serialization.
+        let cluster: ClusterHealthMonitoring = serde_json::from_value(json!({
+            "nodes": [compute("node", "pve", true, 0.25, 4.0)],
+            "vms": [vm_running, vm_stopped],
+            "lxcs": [lxc],
+            "storages": [],
+        }))
+        .unwrap();
+        let options = json!({
+            "cpu": true,
+            "memory": true,
+            "showUptime": true,
+            "visibleClusterSections": ["node", "qemu", "lxc"],
+            "defaultTab": "system",
+            "sectionIndicatorRequirement": "all",
+        });
+        let data = json!({
+            "items": [{ "integrationName": "Proxmox", "integrationKind": "proxmox", "cluster": cluster }],
+            "errors": [{ "integrationName": "Glances", "error": "Unable to connect" }],
+        });
+        let html = render_widget_html(WidgetKind::HealthMonitoring, "i", &options, &data);
+        assert!(html.contains("Up 1d 1h"), "{html}");
+        assert!(html.contains("25%"), "cluster CPU: {html}");
+        assert!(html.contains("50%"), "cluster RAM: {html}");
+        assert!(html.contains("Nodes") && html.contains("Virtual machines"));
+        assert!(html.contains("1/2"), "VMs x/y: {html}");
+        assert!(
+            html.contains("25.0%") && html.contains("50.0%"),
+            "node row: {html}"
+        );
+        assert!(!html.contains("Storage"));
+        // A failing integration shows an error line instead of disappearing.
+        assert!(html.contains("Glances") && html.contains("Unable to connect"));
+        assert!(!html.contains("telemetry unavailable"));
+    }
+
+    #[test]
+    fn uptime_kuma_renders_summary_and_monitors() {
+        let monitor = |id: i64, name: &str, status: &str, uptime: f64| {
+            json!({
+                "id": id,
+                "name": name,
+                "status": status,
+                "uptime24h": uptime,
+                "ping": 12.0,
+                "tags": [],
+                "heartbeats": [],
+            })
+        };
+        let page = |monitors: Vec<Value>| {
+            json!({
+                "integrationName": "Kuma",
+                "page": {
+                    "title": "Home",
+                    "url": "",
+                    "groups": [
+                        { "id": 1, "name": "A", "monitors": monitors.clone() },
+                        { "id": 2, "name": "B", "monitors": monitors },
+                    ],
+                    "incidents": [],
+                    "maintenances": [],
+                },
+            })
+        };
+        let all_up = json!({
+            "pages": [page(vec![
+                monitor(1, "Router", "up", 100.0),
+                monitor(2, "NAS", "up", 99.0),
+            ])],
+            "errors": [],
+        });
+        let html = render_widget_html(WidgetKind::UptimeKuma, "i", &json!({}), &all_up);
+        assert!(html.contains("2/2 up") && html.contains("All up"), "{html}");
+        assert!(html.contains("99.50%") && html.contains("Router") && html.contains("12 ms"));
+
+        let one_down = json!({
+            "pages": [page(vec![
+                monitor(1, "Router", "up", 100.0),
+                monitor(2, "NAS", "down", 90.0),
+            ])],
+        });
+        let options = json!({ "showOnlyProblems": true });
+        let html = render_widget_html(WidgetKind::UptimeKuma, "i", &options, &one_down);
+        assert!(html.contains("1/2 up") && html.contains("1 down"), "{html}");
+        assert!(html.contains("NAS") && !html.contains("Router"));
+    }
+
+    #[test]
+    fn media_server_shows_session_details_and_errors() {
+        let data = json!({
+            "sessions": [{
+                "sessionId": "1",
+                "sessionName": "Living room",
+                "integrationName": "Plex",
+                "user": { "userId": "u", "username": "alice" },
+                "currentlyPlaying": {
+                    "type": "tv",
+                    "name": "Show",
+                    "seasonNumber": 1,
+                    "episodeNumber": 2,
+                    "episodeName": "Pilot",
+                    "location": "wan",
+                    "playback": { "state": "playing", "positionMs": 600_000.0, "durationMs": 1_800_000.0 },
+                    "metadata": {
+                        "video": { "resolution": { "width": 1920, "height": 804 } },
+                        "audio": {},
+                        "transcoding": {
+                            "target": {},
+                            "isVideoDirect": false,
+                            "isAudioDirect": true,
+                            "containerChanged": true,
+                        },
+                        "bitrateKbps": 5400.0,
+                    },
+                },
+            }],
+            "errors": [{ "integrationName": "Jellyfin", "error": "timed out" }],
+        });
+        let html = render_widget_html(WidgetKind::MediaServer, "i", &json!({}), &data);
+        for needle in [
+            "S01E02",
+            "Pilot",
+            "20 min left",
+            "Transcode (video)",
+            "WAN",
+            "1080p",
+            "1 active stream",
+            "Total 5.4 Mb/s",
+            "Jellyfin",
+            "timed out",
+        ] {
+            assert!(html.contains(needle), "missing {needle}: {html}");
+        }
+    }
+
+    #[test]
+    fn media_releases_honour_source_and_type_options() {
+        let data = json!({
+            "releases": [{
+                "id": "1",
+                "type": "movie",
+                "title": "Film",
+                "releaseDate": "2024-03-01T00:00:00Z",
+                "imageUrls": { "poster": null, "backdrop": null },
+                "tags": ["Drama"],
+                "href": "",
+                "rating": "8.1",
+                "integrationName": "Jellyfin",
+            }],
+        });
+        let html = render_widget_html(WidgetKind::MediaReleases, "i", &json!({}), &data);
+        assert!(html.contains("Jellyfin") && html.contains(">movie<") && html.contains("8.1"));
+        let options = json!({ "showSource": false, "showType": false });
+        let html = render_widget_html(WidgetKind::MediaReleases, "i", &options, &data);
+        assert!(!html.contains("Jellyfin") && !html.contains(">movie<"));
     }
 }
