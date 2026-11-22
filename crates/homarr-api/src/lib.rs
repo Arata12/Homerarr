@@ -966,6 +966,67 @@ mod tests {
         assert_eq!(status, StatusCode::FORBIDDEN);
     }
 
+    #[tokio::test]
+    async fn patch_board_item_moves_it_with_layouts_or_flat_fields() {
+        let (state, app) = setup_test_state().await;
+        let admin = login_cookie(&app, "demo", "demo").await;
+        let board = repos::boards::create_board_with_defaults(
+            &state.db,
+            repos::boards::CreateBoardInput {
+                id: None,
+                name: "patch-board".into(),
+                is_public: false,
+                creator_id: None,
+                column_count: 10,
+            },
+        )
+        .await
+        .unwrap();
+        let board_id = board.board.id.clone();
+        let (section_id, layout_id) = (board.sections[0].id.clone(), board.layouts[0].id.clone());
+        let placement = |x: i32| {
+            json!({
+                "itemId": "", "sectionId": section_id, "layoutId": layout_id,
+                "xOffset": x, "yOffset": 0, "width": 1, "height": 1
+            })
+        };
+        let (status, created) = send_json(
+            &app,
+            "POST",
+            &format!("/api/boards/{board_id}/items"),
+            Some(&admin),
+            json!({ "id": "", "kind": "clock", "layouts": [placement(0)] }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::CREATED, "create: {created}");
+        let item_id = created["items"][0]["id"].as_str().unwrap().to_string();
+        let x_of = |board: &Value| board["items"][0]["layouts"][0]["xOffset"].as_i64();
+
+        // The shape GET returns: `layouts` used to be ignored with a 200.
+        let (status, moved) = send_json(
+            &app,
+            "PATCH",
+            &format!("/api/boards/{board_id}/items/{item_id}"),
+            Some(&admin),
+            json!({ "layouts": [placement(2)] }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "patch layouts: {moved}");
+        assert_eq!(x_of(&moved), Some(2));
+
+        let (status, moved) = send_json(
+            &app,
+            "PATCH",
+            &format!("/api/boards/{board_id}/items/{item_id}"),
+            Some(&admin),
+            json!({ "layoutId": layout_id, "sectionId": section_id, "xOffset": 4 }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK, "patch flat fields: {moved}");
+        assert_eq!(x_of(&moved), Some(4));
+        assert_eq!(moved["items"][0]["layouts"][0]["width"].as_i64(), Some(1));
+    }
+
     async fn mcp_approve(app: &Router, cookie: &str, client_id: &str, challenge: &str) -> String {
         let uri = format!(
             "/api/mcp/oauth/authorize?response_type=code&client_id={client_id}\

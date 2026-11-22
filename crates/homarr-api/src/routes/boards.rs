@@ -392,6 +392,39 @@ pub struct PatchItemBody {
     pub width: Option<i32>,
     pub height: Option<i32>,
     pub options: Option<Value>,
+    /// Same shape as the board's `items[].layouts` (and `POST .../items`), upserted per layout.
+    pub layouts: Option<Vec<ItemLayoutRecord>>,
+}
+
+/// Upserts the item's placement in one layout; unset sizes keep their value (or default to 1x1).
+#[allow(clippy::too_many_arguments)]
+fn place_item(
+    layouts: &mut Vec<ItemLayoutRecord>,
+    item_id: &str,
+    layout_id: &str,
+    section_id: &str,
+    x: Option<i32>,
+    y: Option<i32>,
+    width: Option<i32>,
+    height: Option<i32>,
+) {
+    if let Some(existing) = layouts.iter_mut().find(|l| l.layout_id == layout_id) {
+        existing.section_id = section_id.to_string();
+        existing.x_offset = x.unwrap_or(existing.x_offset);
+        existing.y_offset = y.unwrap_or(existing.y_offset);
+        existing.width = width.unwrap_or(existing.width);
+        existing.height = height.unwrap_or(existing.height);
+    } else {
+        layouts.push(ItemLayoutRecord {
+            item_id: item_id.to_string(),
+            section_id: section_id.to_string(),
+            layout_id: layout_id.to_string(),
+            x_offset: x.unwrap_or(0),
+            y_offset: y.unwrap_or(0),
+            width: width.unwrap_or(1),
+            height: height.unwrap_or(1),
+        });
+    }
 }
 
 pub async fn update_board_item(
@@ -431,32 +464,29 @@ pub async fn update_board_item(
                 modified = true;
             }
             if let (Some(lid), Some(sid)) = (&body.layout_id, &body.section_id) {
-                if let Some(existing_layout) = item.layouts.iter_mut().find(|l| l.layout_id == *lid)
-                {
-                    existing_layout.section_id = sid.clone();
-                    if let Some(x) = body.x_offset {
-                        existing_layout.x_offset = x;
-                    }
-                    if let Some(y) = body.y_offset {
-                        existing_layout.y_offset = y;
-                    }
-                    if let Some(w) = body.width {
-                        existing_layout.width = w;
-                    }
-                    if let Some(h) = body.height {
-                        existing_layout.height = h;
-                    }
-                } else {
-                    item.layouts.push(ItemLayoutRecord {
-                        item_id: item_id.clone(),
-                        section_id: sid.clone(),
-                        layout_id: lid.clone(),
-                        x_offset: body.x_offset.unwrap_or(0),
-                        y_offset: body.y_offset.unwrap_or(0),
-                        width: body.width.unwrap_or(1),
-                        height: body.height.unwrap_or(1),
-                    });
-                }
+                place_item(
+                    &mut item.layouts,
+                    &item_id,
+                    lid,
+                    sid,
+                    body.x_offset,
+                    body.y_offset,
+                    body.width,
+                    body.height,
+                );
+                modified = true;
+            }
+            for l in body.layouts.iter().flatten() {
+                place_item(
+                    &mut item.layouts,
+                    &item_id,
+                    &l.layout_id,
+                    &l.section_id,
+                    Some(l.x_offset),
+                    Some(l.y_offset),
+                    Some(l.width),
+                    Some(l.height),
+                );
                 modified = true;
             }
         }
