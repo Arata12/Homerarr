@@ -288,26 +288,75 @@
     if (startBtn) startBtn.textContent = "Start";
   };
 
+  // Subset of dayjs formatting (the tokens upstream's clock formats use), in a time zone.
+  function formatDayjs(format, date, timeZone) {
+    const locale = document.documentElement.lang || undefined;
+    const tz = timeZone || undefined;
+    const named = (opts) => {
+      try {
+        return new Intl.DateTimeFormat(locale, { timeZone: tz, ...opts }).format(date);
+      } catch (_) {
+        return new Intl.DateTimeFormat(locale, opts).format(date);
+      }
+    };
+    let parts;
+    try {
+      parts = new Intl.DateTimeFormat("en-US", {
+        timeZone: tz,
+        hourCycle: "h23",
+        year: "numeric",
+        month: "numeric",
+        day: "numeric",
+        hour: "numeric",
+        minute: "numeric",
+        second: "numeric",
+      }).formatToParts(date);
+    } catch (_) {
+      return formatDayjs(format, date, null);
+    }
+    const p = {};
+    parts.forEach((x) => (p[x.type] = Number(x.value)));
+    const pad = (n) => String(n).padStart(2, "0");
+    const h12 = p.hour % 12 || 12;
+    const tokens = {
+      YYYY: () => String(p.year),
+      YY: () => pad(p.year % 100),
+      MMMM: () => named({ month: "long" }),
+      MMM: () => named({ month: "short" }),
+      MM: () => pad(p.month),
+      M: () => String(p.month),
+      DD: () => pad(p.day),
+      D: () => String(p.day),
+      dddd: () => named({ weekday: "long" }),
+      ddd: () => named({ weekday: "short" }),
+      HH: () => pad(p.hour),
+      H: () => String(p.hour),
+      hh: () => pad(h12),
+      h: () => String(h12),
+      mm: () => pad(p.minute),
+      m: () => String(p.minute),
+      ss: () => pad(p.second),
+      s: () => String(p.second),
+      A: () => (p.hour < 12 ? "AM" : "PM"),
+      a: () => (p.hour < 12 ? "am" : "pm"),
+    };
+    return format.replace(
+      /\[([^\]]*)]|YYYY|YY|MMMM|MMM|MM|M|DD|D|dddd|ddd|HH|H|hh|h|mm|m|ss|s|A|a/g,
+      (match, literal) => (literal !== undefined ? literal : tokens[match]()),
+    );
+  }
+
   function updateClocks() {
     const now = new Date();
     document.querySelectorAll(".clock-widget").forEach((el) => {
       const is24 = el.getAttribute("data-24h") !== "false";
+      const tz = el.getAttribute("data-tz");
+      const timeFormat = el.getAttribute("data-time-format") || (is24 ? "HH:mm" : "hh:mm A");
+      const dateFormat = el.getAttribute("data-date-format") || "dddd, MMMM D";
       const timeEl = el.querySelector(".clock-time");
-      if (timeEl) {
-        timeEl.textContent = now.toLocaleTimeString([], {
-          hour: "2-digit",
-          minute: "2-digit",
-          hour12: !is24,
-        });
-      }
+      if (timeEl) timeEl.textContent = formatDayjs(timeFormat, now, tz);
       const dateEl = el.querySelector(".clock-date");
-      if (dateEl) {
-        dateEl.textContent = now.toLocaleDateString([], {
-          weekday: "short",
-          month: "short",
-          day: "numeric",
-        });
-      }
+      if (dateEl) dateEl.textContent = formatDayjs(dateFormat, now, tz);
     });
     document.querySelectorAll(".countdown-widget").forEach((el) => {
       const rawDate = el.getAttribute("data-target-date");

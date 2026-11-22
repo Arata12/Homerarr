@@ -434,13 +434,37 @@ fn render_clock(options: &Value, data: &Value) -> Markup {
     } else {
         ""
     };
+    // Like upstream, the custom title only shows when its toggle is on.
     let title = options
-        .get("customTitle")
-        .and_then(|v| v.as_str())
+        .get("customTitleToggle")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(true)
+        .then(|| options.get("customTitle").and_then(|v| v.as_str()))
+        .flatten()
         .unwrap_or("");
+    // Upstream's resolveClockTimeFormat: a custom dayjs format wins, else 24h or "hh:mm A".
+    let time_format = options
+        .get("customTimeFormat")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|f| !f.is_empty() && *f != "automatic")
+        .unwrap_or(if is_24 { "HH:mm" } else { "hh:mm A" });
+    let date_format = options
+        .get("dateFormat")
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|f| !f.is_empty())
+        .unwrap_or("dddd, MMMM D");
+    let time_zone = options
+        .get("useCustomTimezone")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+        .then(|| options.get("timezone").and_then(|v| v.as_str()))
+        .flatten();
 
     html! {
-        div.clock-widget data-24h=(is_24) {
+        div.clock-widget data-24h=(is_24) data-time-format=(time_format)
+            data-date-format=(date_format) data-tz=[time_zone] {
             @if !title.trim().is_empty() {
                 div.clock-sub { (title) }
             }
@@ -2030,7 +2054,8 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
                 .unwrap_or(101.0)
                 .total_cmp(&f64_at(b, "uptime24h").unwrap_or(101.0))
         }),
-        _ => listed.sort_by_key(|m| (monitor_rank(m), monitor_name(m))),
+        // Upstream's default: by status only (stable), keeping the status page order.
+        _ => listed.sort_by_key(|m| monitor_rank(m)),
     }
 
     html! {
