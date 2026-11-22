@@ -1597,10 +1597,9 @@ fn render_health_monitoring(options: &Value, data: &Value) -> Markup {
             (empty_box("Health telemetry unavailable"))
         }
         @for item in ordered {
-            @let name = str_at(item, "integrationName").unwrap_or("");
             div.health-item {
                 @if let Some(cluster) = item.get("cluster") {
-                    (render_cluster_health(options, name, cluster))
+                    (render_cluster_health(options, cluster))
                 } @else if let Some(health) = item.get("health") {
                     (render_host_health(options, health))
                 }
@@ -1611,11 +1610,70 @@ fn render_health_monitoring(options: &Value, data: &Value) -> Markup {
 
 struct ClusterSection<'a> {
     title: &'static str,
-    resources: &'a [Value],
+    icon: &'static str,
+    resources: Vec<&'a Value>,
     is_storage: bool,
 }
 
-fn render_cluster_health(options: &Value, name: &str, cluster: &Value) -> Markup {
+// Tabler outline icon paths (static markup, never user data).
+const ICON_CPU: &str = r#"<path d="M5 6a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v12a1 1 0 0 1 -1 1h-12a1 1 0 0 1 -1 -1z"/><path d="M9 9h6v6h-6z"/><path d="M3 10h2"/><path d="M3 14h2"/><path d="M10 3v2"/><path d="M14 3v2"/><path d="M21 10h-2"/><path d="M21 14h-2"/><path d="M14 21v-2"/><path d="M10 21v-2"/>"#;
+const ICON_BRAIN: &str = r#"<path d="M15.5 13a3.5 3.5 0 0 0 -3.5 3.5v1a3.5 3.5 0 0 0 7 0v-1.8"/><path d="M8.5 13a3.5 3.5 0 0 1 3.5 3.5v1a3.5 3.5 0 0 1 -7 0v-1.8"/><path d="M17.5 16a3.5 3.5 0 0 0 0 -7h-.5"/><path d="M19 9.3v-2.8a3.5 3.5 0 0 0 -7 0"/><path d="M6.5 16a3.5 3.5 0 0 1 0 -7h.5"/><path d="M5 9.3v-2.8a3.5 3.5 0 0 1 7 0v10"/>"#;
+const ICON_SERVER: &str = r#"<path d="M3 7a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3z"/><path d="M3 15a3 3 0 0 1 3 -3h12a3 3 0 0 1 3 3v2a3 3 0 0 1 -3 3h-12a3 3 0 0 1 -3 -3z"/><path d="M7 8v.01"/><path d="M7 16v.01"/>"#;
+const ICON_LAPTOP: &str = r#"<path d="M3 19h18"/><path d="M5 7a1 1 0 0 1 1 -1h12a1 1 0 0 1 1 1v8a1 1 0 0 1 -1 1h-12a1 1 0 0 1 -1 -1z"/>"#;
+const ICON_CUBE: &str = r#"<path d="M21 16.008v-8.018a1.98 1.98 0 0 0 -1 -1.717l-7 -4.008a2.016 2.016 0 0 0 -2 0l-7 4.008c-.619 .355 -1 1.01 -1 1.718v8.018c0 .709 .381 1.363 1 1.717l7 4.008a2.016 2.016 0 0 0 2 0l7 -4.008c.619 -.355 1 -1.01 1 -1.718z"/><path d="M12 22v-10"/><path d="M12 12l8.73 -5.04"/><path d="M3.27 6.96l8.73 5.04"/>"#;
+const ICON_DATABASE: &str = r#"<path d="M4 6a8 3 0 1 0 16 0a8 3 0 1 0 -16 0"/><path d="M4 6v6a8 3 0 0 0 16 0v-6"/><path d="M4 12v6a8 3 0 0 0 16 0v-6"/>"#;
+const ICON_CHEVRON_DOWN: &str = r#"<path d="M6 9l6 6l6 -6"/>"#;
+const ICON_CIRCLE_CHECK: &str =
+    r#"<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M9 12l2 2l4 -4"/>"#;
+const ICON_ALERT_TRIANGLE: &str = r#"<path d="M12 9v4"/><path d="M10.363 3.591l-8.106 13.534a1.914 1.914 0 0 0 1.636 2.871h16.214a1.914 1.914 0 0 0 1.636 -2.87l-8.106 -13.536a1.914 1.914 0 0 0 -3.274 0z"/><path d="M12 16h.01"/>"#;
+const ICON_CIRCLE_X: &str =
+    r#"<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M10 10l4 4m0 -4l-4 4"/>"#;
+const ICON_TOOL: &str = r#"<path d="M7 10h3v-3l-3.5 -3.5a6 6 0 0 1 8 8l6 6a2 2 0 0 1 -3 3l-6 -6a6 6 0 0 1 -8 -8l3.5 3.5"/>"#;
+const ICON_HELP_CIRCLE: &str = r#"<path d="M3 12a9 9 0 1 0 18 0a9 9 0 1 0 -18 0"/><path d="M12 16v.01"/><path d="M12 13a2 2 0 0 0 .914 -3.782a1.98 1.98 0 0 0 -2.414 .483"/>"#;
+const ICON_EXTERNAL_LINK: &str = r#"<path d="M12 6h-6a2 2 0 0 0 -2 2v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-6"/><path d="M11 13l9 -9"/><path d="M15 4h5v5"/>"#;
+
+fn tabler_icon(paths: &'static str) -> Markup {
+    // safe: `paths` is always one of the static ICON_* consts above.
+    PreEscaped(format!(
+        r#"<svg class="ui-icon" viewBox="0 0 24 24" width="1em" height="1em" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">{paths}</svg>"#
+    ))
+}
+
+/// Upstream's dayjs duration parts: whole years dropped, months of 365/12 days.
+fn format_long_uptime(secs: u64) -> String {
+    let rest = secs % 31_536_000;
+    let months = rest / 2_628_000;
+    let rest = rest % 2_628_000;
+    let days = rest / 86_400;
+    let hours = (rest % 86_400) / 3_600;
+    let minutes = (rest % 3_600) / 60;
+    format!("Uptime: {months} Months, {days} Days, {hours} Hours, {minutes} Minutes")
+}
+
+fn render_cluster_ring(icon: &'static str, label: &str, pct: f64) -> Markup {
+    let clamped = pct.clamp(0.0, 100.0);
+    let circ = 125.664_f64; // 2 * pi * r(20)
+    let offset = circ * (1.0 - clamped / 100.0);
+    let tone = if clamped > 75.0 { "high" } else { "ok" };
+    html! {
+        div.hm-ring {
+            div.hm-ring-gauge {
+                svg viewBox="0 0 48 48" width="48" height="48" aria-hidden="true" {
+                    circle.hm-ring-track cx="24" cy="24" r="20" {}
+                    circle.hm-ring-arc data-tone=(tone) cx="24" cy="24" r="20"
+                        style=(format!("stroke-dasharray:{circ:.1};stroke-dashoffset:{offset:.1}")) {}
+                }
+                span.hm-ring-icon { (tabler_icon(icon)) }
+            }
+            div.hm-ring-text {
+                span.hm-ring-label { (label) }
+                span.hm-ring-value { (format!("{clamped:.1}%")) }
+            }
+        }
+    }
+}
+
+fn render_cluster_health(options: &Value, cluster: &Value) -> Markup {
     let list = |key: &str| {
         cluster
             .get(key)
@@ -1656,82 +1714,92 @@ fn render_cluster_health(options: &Value, name: &str, cluster: &Value) -> Markup
         .and_then(Value::as_array)
         .map(|a| a.iter().filter_map(Value::as_str).collect())
         .unwrap_or_else(|| vec!["node", "qemu", "lxc", "storage"]);
-    let sections: Vec<ClusterSection> = visible
-        .iter()
-        .filter_map(|section| {
-            let (title, key) = match *section {
-                "node" => ("Nodes", "nodes"),
-                "qemu" => ("Virtual machines", "vms"),
-                "lxc" => ("Containers", "lxcs"),
-                "storage" => ("Storage", "storages"),
-                _ => return None,
-            };
-            Some(ClusterSection {
-                title,
-                resources: list(key),
-                is_storage: key == "storages",
-            })
-        })
-        .collect();
+    // Fixed upstream order; the option only picks which sections are shown.
+    let sections: Vec<ClusterSection> = [
+        ("node", "Nodes", ICON_SERVER, "nodes"),
+        ("qemu", "VMs", ICON_LAPTOP, "vms"),
+        ("lxc", "LXCs", ICON_CUBE, "lxcs"),
+        ("storage", "Storage", ICON_DATABASE, "storages"),
+    ]
+    .into_iter()
+    .filter(|(section, ..)| visible.contains(section))
+    .map(|(_, title, icon, key)| {
+        let mut resources: Vec<&Value> = list(key).iter().collect();
+        resources.sort_by_key(|&r| {
+            (
+                str_at(r, "node").unwrap_or(""),
+                str_at(r, "name").unwrap_or(""),
+            )
+        });
+        ClusterSection {
+            title,
+            icon,
+            resources,
+            is_storage: key == "storages",
+        }
+    })
+    .collect();
 
     html! {
-        div.health-host-row {
-            strong { (name) }
+        div.hm-cluster {
             @if opt_flag(options, "showUptime", true) {
-                span.badge.up { "Up " (format_uptime(uptime as u64)) }
+                div.hm-uptime { (format_long_uptime(uptime as u64)) }
             }
-        }
-        @if show_cpu || show_memory {
-            div.health-gauges {
-                @if show_cpu {
-                    (render_donut_gauge("CPU", cpu_pct, &format!("{cores:.0} cores"), "var(--mantine-blue)"))
-                }
-                @if show_memory {
-                    (render_donut_gauge("Memory", mem_pct,
-                        &format!("{} / {} GiB", format_gib(used_mem as u64), format_gib(total_mem as u64)),
-                        "var(--mantine-violet)"))
+            @if show_cpu || show_memory {
+                div.hm-rings {
+                    @if show_cpu {
+                        (render_cluster_ring(ICON_CPU, "CPU", cpu_pct))
+                    }
+                    @if show_memory {
+                        (render_cluster_ring(ICON_BRAIN, "RAM", mem_pct))
+                    }
                 }
             }
-        }
-        @for (index, section) in sections.iter().enumerate() {
-            @let active = section.resources.iter().filter(|r| resource_running(r)).count();
-            @let total = section.resources.len();
-            @let healthy = active == total || (any_running_is_enough && active > 0);
-            details.cluster-section open[index == 0] {
-                summary {
-                    span { (section.title) }
-                    span.badge.(if healthy { "up" } else { "warn" }) { (active) "/" (total) }
-                }
-                @if total > 0 {
-                    table.cluster-table {
-                        thead {
-                            tr {
-                                th { "Name" }
-                                @if section.is_storage {
-                                    th { "Node" }
-                                    th { "Used" }
-                                } @else {
-                                    th { "CPU" }
-                                    th { "RAM" }
+            @if !sections.is_empty() {
+                div.hm-sections {
+                    @for (index, section) in sections.iter().enumerate() {
+                        @let active = section.resources.iter().filter(|r| resource_running(r)).count();
+                        @let total = section.resources.len();
+                        @let healthy = active == total || (any_running_is_enough && active > 0);
+                        // Upstream opens only the first visible section by default.
+                        details.hm-section open[index == 0] {
+                            summary {
+                                span.hm-section-icon { (tabler_icon(section.icon)) }
+                                span.hm-section-title { (section.title) }
+                                span.hm-count data-tone=(if healthy { "ok" } else { "warn" }) {
+                                    span.hm-count-dot {}
+                                    (active) " / " (total)
                                 }
+                                span.hm-chevron { (tabler_icon(ICON_CHEVRON_DOWN)) }
                             }
-                        }
-                        tbody {
-                            @for resource in section.resources {
-                                @let running = resource_running(resource);
-                                tr {
-                                    td {
-                                        span.dot.(if running { "up" } else { "down" }) {}
-                                        " " (str_at(resource, "name").unwrap_or(""))
+                            @if total > 0 {
+                                table.hm-table {
+                                    thead {
+                                        tr {
+                                            th { "Name" }
+                                            @if section.is_storage {
+                                                th { "Node" }
+                                            } @else {
+                                                th { "CPU" }
+                                                th { "RAM" }
+                                            }
+                                        }
                                     }
-                                    @if section.is_storage {
-                                        @let used = f64_at(resource, "used").unwrap_or(0.0);
-                                        @let size = f64_at(resource, "total").unwrap_or(0.0);
-                                        td { (str_at(resource, "node").unwrap_or("")) }
-                                        td { (format_ratio_pct(used, size)) }
-                                    } @else {
-                                        td { (format!("{:.1}%", nested_f64(resource, "cpu", "utilization") * 100.0)) }
-                                        td { (format_ratio_pct(nested_f64(resource, "memory", "used"), nested_f64(resource, "memory", "total"))) }
+                                    tbody {
+                                        @for resource in &section.resources {
+                                            tr {
+                                                td {
+                                                    span.hm-run-dot data-running=(if resource_running(resource) { "true" } else { "false" }) {}
+                                                    (str_at(resource, "name").unwrap_or(""))
+                                                }
+                                                @if section.is_storage {
+                                                    td { (str_at(resource, "node").unwrap_or("")) }
+                                                } @else {
+                                                    td { (format!("{:.1}%", nested_f64(resource, "cpu", "utilization") * 100.0)) }
+                                                    td { (format_ratio_pct(nested_f64(resource, "memory", "used"), nested_f64(resource, "memory", "total"))) }
+                                                }
+                                            }
+                                        }
                                     }
                                 }
                             }
@@ -1781,6 +1849,50 @@ fn format_ratio_pct(used: f64, total: f64) -> String {
     }
 }
 
+/// Display order of the status breakdown, like upstream's `presentStatuses`.
+const MONITOR_STATUSES: [&str; 6] = ["up", "down", "pending", "maintenance", "stale", "unknown"];
+
+fn monitor_status_label(status: &str) -> &'static str {
+    match status {
+        "up" => "Up",
+        "down" => "Down",
+        "pending" => "Pending",
+        "maintenance" => "Maintenance",
+        "stale" => "No recent data",
+        _ => "No data",
+    }
+}
+
+fn is_inactive_status(status: &str) -> bool {
+    matches!(status, "stale" | "unknown")
+}
+
+/// Upstream `formatUptime`: truncates, so 99.996% never shows as 100%.
+fn format_kuma_uptime(uptime: f64) -> String {
+    if uptime >= 100.0 {
+        "100%".to_string()
+    } else if uptime >= 99.0 {
+        format!("{:.2}%", (uptime * 100.0).floor() / 100.0)
+    } else {
+        format!("{:.1}%", (uptime * 10.0).floor() / 10.0)
+    }
+}
+
+fn uptime_tone(status: &str, uptime: Option<f64>) -> &'static str {
+    match uptime {
+        Some(u) if !is_inactive_status(status) => {
+            if u >= 99.0 {
+                "healthy"
+            } else if u >= 95.0 {
+                "warning"
+            } else {
+                "critical"
+            }
+        }
+        _ => "inactive",
+    }
+}
+
 fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
     let pages = data
         .get("pages")
@@ -1811,34 +1923,76 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
             }
         }
     }
-    let up = monitors
+    let count = |status: &str| {
+        monitors
+            .iter()
+            .filter(|m| monitor_status(m) == status)
+            .count()
+    };
+    let total = monitors.len();
+    let up = count("up");
+    let down = count("down");
+    let active: Vec<&Value> = monitors
         .iter()
-        .filter(|m| monitor_status(m) == "up")
-        .count();
-    let down = monitors
+        .copied()
+        .filter(|m| !is_inactive_status(monitor_status(m)))
+        .collect();
+    let uptimes: Vec<f64> = active
         .iter()
-        .filter(|m| monitor_status(m) == "down")
-        .count();
-    let uptimes: Vec<f64> = monitors
-        .iter()
-        .filter(|m| !matches!(monitor_status(m), "stale" | "unknown"))
         .filter_map(|m| f64_at(m, "uptime24h"))
         .collect();
     let average_uptime =
         (!uptimes.is_empty()).then(|| uptimes.iter().sum::<f64>() / uptimes.len() as f64);
-    let (overall_class, overall) = if monitors.is_empty() {
-        ("muted", "No monitors".to_string())
-    } else if up == monitors.len() {
-        ("up", "All up".to_string())
-    } else if down > 0 {
-        ("down", format!("{down} down"))
+    // Same precedence as the integration's `summarize`.
+    let overall = if active.is_empty() {
+        "unknown"
+    } else if down == active.len() {
+        "outage"
+    } else if down + count("pending") > 0 {
+        "degraded"
+    } else if count("maintenance") > 0 {
+        "maintenance"
+    } else if active.len() < total {
+        "unknown"
     } else {
-        ("warn", format!("{} not up", monitors.len() - up))
+        "operational"
     };
+    let (overall_icon, overall_label) = match overall {
+        "operational" => (ICON_CIRCLE_CHECK, "All systems operational".to_string()),
+        "degraded" => (ICON_ALERT_TRIANGLE, "Partially degraded service".to_string()),
+        "outage" => (ICON_CIRCLE_X, "Major outage".to_string()),
+        "maintenance" => (ICON_TOOL, "Under maintenance".to_string()),
+        _ if up > 0 => (ICON_HELP_CIRCLE, format!("{up} of {total} monitors up")),
+        _ if count("stale") > 0 => (ICON_HELP_CIRCLE, "No recent data".to_string()),
+        _ => (ICON_HELP_CIRCLE, "Waiting for first checks".to_string()),
+    };
+    let status_page = match pages {
+        [page] => page.get("page"),
+        _ => None,
+    };
+    let status_page_link = status_page
+        .and_then(|p| str_at(p, "url"))
+        .map(safe_url)
+        .filter(|href| *href != "#");
+
+    let show_summary = opt_flag(options, "showSummary", true);
+    let show_uptime = opt_flag(options, "showUptime", true);
+    let show_average = opt_flag(options, "showAverageUptime", show_uptime);
+    let show_beats = opt_flag(options, "showHeartbeatBar", true);
+    let show_ping = opt_flag(options, "showResponseTime", true);
+    // Per-status count toggles carried over from older boards.
+    let shows_count = |status: &str| match status {
+        "up" => opt_flag(options, "showUpCount", true),
+        "down" => opt_flag(options, "showDownCount", true),
+        _ => opt_flag(options, "showPausedCount", true),
+    };
+    let present: Vec<(&str, usize)> = MONITOR_STATUSES
+        .iter()
+        .map(|&status| (status, count(status)))
+        .filter(|(_, n)| *n > 0)
+        .collect();
 
     let only_problems = opt_flag(options, "showOnlyProblems", false);
-    let show_uptime = opt_flag(options, "showUptime", true);
-    let show_ping = opt_flag(options, "showResponseTime", true);
     let mut listed: Vec<&Value> = monitors
         .iter()
         .copied()
@@ -1857,44 +2011,110 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
 
     html! {
         (render_integration_errors(data))
-        @if !pages.is_empty() {
-            div.health-host-row {
-                strong { (up) "/" (monitors.len()) " up" }
-                span.badge.(overall_class) { (overall) }
+        @if pages.is_empty() {
+            @if !has_integration_errors(data) {
+                (empty_box("No monitors"))
             }
-            @if let Some(uptime) = average_uptime.filter(|_| show_uptime) {
-                div.media-meta { span { "Uptime (24h)" } span { (format!("{uptime:.2}%")) } }
-            }
-            @if !opt_flag(options, "summaryOnly", false) {
-                ul.compact-list.uptime-monitors {
-                    @for monitor in listed {
-                        @let state = monitor_status(monitor);
-                        li {
-                            span {
-                                span.dot.(if state == "up" { "up" } else { "down" }) {}
-                                " " (str_at(monitor, "name").unwrap_or(""))
+        } @else {
+            div.uk {
+                @if show_summary {
+                    header.uk-header {
+                        div.uk-header-top {
+                            span.uk-overall data-status=(overall) {
+                                span.uk-overall-icon { (tabler_icon(overall_icon)) }
+                                strong { (overall_label) }
                             }
-                            span.muted {
+                            @if let Some(href) = status_page_link {
+                                a.uk-page-link href=(href) target="_blank" rel="noopener noreferrer" {
+                                    span { (status_page.and_then(|p| str_at(p, "title")).unwrap_or("")) }
+                                    (tabler_icon(ICON_EXTERNAL_LINK))
+                                }
+                            }
+                        }
+                        div.uk-distribution {
+                            @for (status, n) in &present {
+                                span.uk-distribution-part data-status=(status)
+                                    style=(format!("flex-grow:{n}"))
+                                    title=(format!("{n} {}", monitor_status_label(status))) {}
+                            }
+                        }
+                        div.uk-summary-line {
+                            span.uk-breakdown {
+                                @for (status, n) in present.iter().filter(|entry| shows_count(entry.0)) {
+                                    span.uk-breakdown-item {
+                                        span.uk-dot data-status=(status) {}
+                                        strong { (n) }
+                                        span.muted { (monitor_status_label(status)) }
+                                    }
+                                }
+                            }
+                            @if let Some(uptime) = average_uptime.filter(|_| show_average) {
+                                span.uk-metric {
+                                    strong { (format_kuma_uptime(uptime)) }
+                                    span.muted { "uptime 24h" }
+                                }
+                            }
+                        }
+                    }
+                }
+                @if !opt_flag(options, "summaryOnly", false) {
+                    @if listed.is_empty() && total > 0 {
+                        div.uk-all-clear {
+                            (tabler_icon(ICON_CIRCLE_CHECK))
+                            @if total == 1 {
+                                span { "The monitor is up" }
+                            } @else {
+                                span { (format!("All {total} monitors are up")) }
+                            }
+                        }
+                    }
+                    div.uk-monitors {
+                        @for monitor in listed {
+                            @let state = monitor_status(monitor);
+                            @let name = str_at(monitor, "name").unwrap_or("");
+                            @let href = str_at(monitor, "url").map(safe_url).filter(|h| *h != "#");
+                            @let uptime = f64_at(monitor, "uptime24h");
+                            div.uk-monitor data-status=(state) {
+                                div.uk-monitor-main {
+                                    span.uk-dot data-status=(state) {}
+                                    @if let Some(href) = href {
+                                        a.uk-monitor-name href=(href) target="_blank" rel="noopener noreferrer" { (name) }
+                                    } @else {
+                                        span.uk-monitor-name { (name) }
+                                    }
+                                    @if state != "up" {
+                                        span.uk-monitor-status { (monitor_status_label(state)) }
+                                    }
+                                }
+                                @if show_beats {
+                                    div.uk-beats aria-hidden="true" {
+                                        @for beat in monitor.get("heartbeats").and_then(Value::as_array).into_iter().flatten() {
+                                            @let beat_status = str_at(beat, "status").unwrap_or("unknown");
+                                            @let ping = f64_at(beat, "ping").map(|p| format!(" · {p:.0} ms")).unwrap_or_default();
+                                            span.uk-beat data-status=(beat_status)
+                                                title=(format!("{}{ping}", monitor_status_label(beat_status))) {}
+                                        }
+                                    }
+                                }
                                 @if show_ping {
-                                    @if let Some(ping) = f64_at(monitor, "ping") {
-                                        (format!("{ping:.0} ms")) " "
+                                    span.uk-ping {
+                                        @if let Some(ping) = f64_at(monitor, "ping") {
+                                            (format!("{ping:.0} ms"))
+                                        }
                                     }
                                 }
                                 @if show_uptime {
-                                    @if let Some(uptime) = f64_at(monitor, "uptime24h") {
-                                        (format!("{uptime:.1}%"))
+                                    span.uk-uptime data-tone=(uptime_tone(state, uptime)) {
+                                        @if let Some(uptime) = uptime {
+                                            (format_kuma_uptime(uptime))
+                                        }
                                     }
-                                }
-                                @if state != "up" {
-                                    " " span.badge.down { (state) }
                                 }
                             }
                         }
                     }
                 }
             }
-        } @else if !has_integration_errors(data) {
-            (empty_box("No monitors"))
         }
     }
 }
@@ -2753,15 +2973,20 @@ mod data_widget_tests {
             "errors": [{ "integrationName": "Glances", "error": "Unable to connect" }],
         });
         let html = render_widget_html(WidgetKind::HealthMonitoring, "i", &options, &data);
-        assert!(html.contains("Up 1d 1h"), "{html}");
-        assert!(html.contains("25%"), "cluster CPU: {html}");
-        assert!(html.contains("50%"), "cluster RAM: {html}");
-        assert!(html.contains("Nodes") && html.contains("Virtual machines"));
-        assert!(html.contains("1/2"), "VMs x/y: {html}");
+        assert!(
+            html.contains("Uptime: 0 Months, 1 Days, 1 Hours, 1 Minutes"),
+            "{html}"
+        );
+        assert!(html.contains("CPU") && html.contains("RAM"));
         assert!(
             html.contains("25.0%") && html.contains("50.0%"),
-            "node row: {html}"
+            "rings and node row: {html}"
         );
+        assert!(html.contains("Nodes") && html.contains("VMs") && html.contains("LXCs"));
+        assert!(html.contains("1 / 2"), "VMs x / y: {html}");
+        // Only the first section starts expanded.
+        assert_eq!(html.matches("<details").count(), 3);
+        assert_eq!(html.matches(" open>").count(), 1, "{html}");
         assert!(!html.contains("Storage"));
         // A failing integration shows an error line instead of disappearing.
         assert!(html.contains("Glances") && html.contains("Unable to connect"));
@@ -2778,7 +3003,10 @@ mod data_widget_tests {
                 "uptime24h": uptime,
                 "ping": 12.0,
                 "tags": [],
-                "heartbeats": [],
+                "heartbeats": [
+                    { "status": "up", "time": 1, "ping": 10.0 },
+                    { "status": "down", "time": 2, "ping": null },
+                ],
             })
         };
         let page = |monitors: Vec<Value>| {
@@ -2786,7 +3014,7 @@ mod data_widget_tests {
                 "integrationName": "Kuma",
                 "page": {
                     "title": "Home",
-                    "url": "",
+                    "url": "https://kuma.example/status/home",
                     "groups": [
                         { "id": 1, "name": "A", "monitors": monitors.clone() },
                         { "id": 2, "name": "B", "monitors": monitors },
@@ -2804,8 +3032,26 @@ mod data_widget_tests {
             "errors": [],
         });
         let html = render_widget_html(WidgetKind::UptimeKuma, "i", &json!({}), &all_up);
-        assert!(html.contains("2/2 up") && html.contains("All up"), "{html}");
+        assert!(html.contains("All systems operational"), "{html}");
+        assert!(html.contains(r#"href="https://kuma.example/status/home""#));
+        assert!(html.contains("<strong>2</strong>") && html.contains("uptime 24h"));
         assert!(html.contains("99.50%") && html.contains("Router") && html.contains("12 ms"));
+        // Monitors are deduplicated across groups; each has its heartbeat strip.
+        assert_eq!(html.matches(r#"class="uk-monitor""#).count(), 2);
+        assert_eq!(html.matches(r#"class="uk-beat""#).count(), 4);
+
+        let options = json!({
+            "showUpCount": false,
+            "showAverageUptime": false,
+            "showHeartbeatBar": false,
+        });
+        let html = render_widget_html(WidgetKind::UptimeKuma, "i", &options, &all_up);
+        assert!(!html.contains(r#"<span class="muted">Up</span>"#), "{html}");
+        assert!(!html.contains("uptime 24h") && !html.contains("uk-beat"));
+
+        let options = json!({ "showOnlyProblems": true });
+        let html = render_widget_html(WidgetKind::UptimeKuma, "i", &options, &all_up);
+        assert!(html.contains("All 2 monitors are up"), "{html}");
 
         let one_down = json!({
             "pages": [page(vec![
@@ -2815,8 +3061,9 @@ mod data_widget_tests {
         });
         let options = json!({ "showOnlyProblems": true });
         let html = render_widget_html(WidgetKind::UptimeKuma, "i", &options, &one_down);
-        assert!(html.contains("1/2 up") && html.contains("1 down"), "{html}");
+        assert!(html.contains("Partially degraded service"), "{html}");
         assert!(html.contains("NAS") && !html.contains("Router"));
+        assert!(html.contains(r#"data-tone="critical""#), "90% uptime: {html}");
     }
 
     #[test]
