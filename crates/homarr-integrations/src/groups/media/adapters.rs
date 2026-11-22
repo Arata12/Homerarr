@@ -146,6 +146,7 @@ pub fn media_requests(
                 .map_or_else(|| "User".to_string(), |user| user.display_name),
             created_at: request.created_at.to_rfc3339(),
             poster_url: Some(request.poster_image_path),
+            backdrop_url: Some(request.backdrop_image_url),
             href: Some(request.href),
             availability: Some(super::seerr::availability_name(request.availability)),
             air_date: request.air_date.map(|d| d.to_rfc3339()),

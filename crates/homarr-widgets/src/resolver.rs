@@ -788,16 +788,15 @@ fn with_errors(mut data: Value, succeeded: usize, errors: Vec<Value>) -> Value {
     data
 }
 
-/// Releases of every integration, newest first, tagged with their source.
+/// Releases of every integration, tagged with their source. Like upstream, each integration keeps
+/// its own (recently added) order and the lists are concatenated in integration order.
 fn merge_releases(results: Vec<(&IntegrationContext, Vec<MediaRelease>)>) -> Vec<Value> {
-    let mut releases: Vec<(&IntegrationContext, MediaRelease)> = results
+    results
         .into_iter()
-        .flat_map(|(ctx, list)| list.into_iter().map(move |release| (ctx, release)))
-        .collect();
-    releases.sort_by_key(|a| std::cmp::Reverse(a.1.release_date));
-    releases
-        .into_iter()
-        .map(|(ctx, release)| tag_integration(to_json_value(&release), ctx))
+        .flat_map(|(ctx, list)| {
+            list.into_iter()
+                .map(move |release| tag_integration(to_json_value(&release), ctx))
+        })
         .collect()
 }
 
@@ -864,7 +863,7 @@ mod tests {
     }
 
     #[test]
-    fn media_releases_merge_all_integrations_newest_first() {
+    fn media_releases_keep_integration_order() {
         let jellyfin = ctx("Jellyfin", IntegrationKind::Jellyfin);
         let plex = ctx("Plex", IntegrationKind::Plex);
         let merged = merge_releases(vec![
@@ -878,9 +877,9 @@ mod tests {
             (&plex, vec![release("p-mid", "2024-02-01T00:00:00Z")]),
         ]);
         let ids: Vec<&str> = merged.iter().map(|r| r["id"].as_str().unwrap()).collect();
-        assert_eq!(ids, ["j-new", "p-mid", "j-old"]);
-        assert_eq!(merged[1]["integrationName"], "Plex");
-        assert_eq!(merged[1]["integrationKind"], "plex");
+        assert_eq!(ids, ["j-old", "j-new", "p-mid"]);
+        assert_eq!(merged[2]["integrationName"], "Plex");
+        assert_eq!(merged[2]["integrationKind"], "plex");
     }
 
     #[test]
