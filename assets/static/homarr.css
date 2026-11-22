@@ -1,10 +1,10 @@
 :root {
   --bg: #1a1b1e;
   --surface: #25262b;
-  --card-bg: #25262b;
-  --surface-hover: #2c2e33;
-  --border: #373a40;
-  --text: #c1c2c5;
+  --card-bg: #2e2e2e;
+  --surface-hover: #3b3b3b;
+  --border: #424242;
+  --text: #c9c9c9;
   --text-strong: #f8f9fa;
   --text-muted: #909296;
   --primary: #fa5252;
@@ -576,11 +576,23 @@ body.edit-mode .edit-mode-bar {
   grid-auto-rows: var(--cell);
 }
 
-/* Upstream scales the whole canvas with the cell size; zoom widget content by pitch / 188px
-   (tan(atan2()) yields the unitless ratio), calibrated so text matches upstream side by side
-   (1.0 at 10 columns on 1920px), never below 1 so small screens are unchanged. */
-.grid-item > .widget-shell {
-  zoom: clamp(1, tan(atan2(var(--cell) + 12px, 188px)), 1.5);
+@property --z {
+  syntax: "<number>";
+  inherits: true;
+  initial-value: 1;
+}
+
+/* Upstream renders a 212px-pitch logical canvas zoomed to fit the window, but compensates text
+   and UI back to fixed screen sizes (--board-canvas-ui-scale); only app tiles scale with the
+   canvas. --z is that canvas scale: pitch / 212px (tan(atan2()) yields the unitless ratio). */
+.board-sections-stack > .board-section > .board-grid[data-layouts] {
+  --z: clamp(0.3, tan(atan2(var(--cell) + 12px, 212px)), 2);
+  /* Upstream card radius stays 16px on screen. */
+  --item-radius: 16px;
+}
+
+.grid-item > .widget-shell.widget-app {
+  zoom: var(--z);
 }
 
 .section-header {
@@ -708,8 +720,9 @@ body.edit-mode .item-edit-controls {
 /* Container sections: cards placed in their parent grid with their own inner grid.
    The inner grid has as many columns as the container is wide (--w) and --r rows. */
 .grid-item.board-container {
-  padding: 6px;
-  gap: 6px;
+  /* Upstream: a 48px header bar, then content inset by 10px. */
+  padding: 0 10px 10px;
+  gap: 10px;
   width: auto;
 }
 
@@ -717,7 +730,22 @@ body.edit-mode .item-edit-controls {
   display: flex;
   align-items: center;
   gap: 6px;
-  min-height: 28px;
+  min-height: 48px;
+  /* Full-width header with a divider, like upstream's container header. */
+  margin: 0 -10px;
+  padding: 0 16px;
+  border-bottom: 1px solid var(--border);
+}
+
+.board-container .board-container-title,
+.board-container .board-container-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.board-container-open-all {
+  color: var(--mantine-blue);
 }
 
 .board-container-header,
@@ -1005,7 +1033,7 @@ body.edit-mode .board-container-open-all {
   align-items: center;
   justify-content: center;
   text-align: center;
-  gap: 4px;
+  gap: 16px;
 }
 
 .clock-time {
@@ -1579,7 +1607,7 @@ body.edit-mode .board-container-open-all {
   flex-shrink: 0;
 }
 
-.hm-ring-gauge svg {
+.hm-ring-gauge > svg {
   position: absolute;
   inset: 0;
   transform: rotate(-90deg);
@@ -1643,7 +1671,8 @@ body.edit-mode .board-container-open-all {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 10px 14px;
+  min-height: 42px;
+  padding: 10px 16px;
   font-size: 0.75rem;
   color: var(--text-strong);
   cursor: pointer;
@@ -1694,13 +1723,15 @@ body.edit-mode .board-container-open-all {
 }
 
 .hm-table {
-  width: calc(100% - 28px);
-  margin: 0 14px 10px;
+  width: calc(100% - 32px);
+  margin: 0 16px 20px;
   border-collapse: collapse;
   font-size: 0.75rem;
 }
 
 .hm-table th {
+  text-transform: none;
+  letter-spacing: 0;
   text-align: start;
   font-weight: 700;
   color: var(--text-strong);
@@ -1913,7 +1944,7 @@ body.edit-mode .board-container-open-all {
   gap: 12px;
   min-width: 0;
   padding: 9px 0;
-  font-size: 1.125rem;
+  font-size: 1rem;
 }
 
 .uk-monitor + .uk-monitor {
@@ -2135,7 +2166,7 @@ body.edit-mode .board-container-open-all {
   display: flex;
   gap: 8px;
   min-width: 0;
-  padding: 4px;
+  padding: 6px;
   border-radius: 8px;
   color: inherit;
   text-decoration: none;
@@ -2261,8 +2292,13 @@ body.edit-mode .board-container-open-all {
 .media-server-table th {
   position: sticky;
   top: 0;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  font-size: 0.75rem;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  line-height: 1.2;
+  text-transform: none;
+  letter-spacing: 0;
   color: var(--text-muted);
   white-space: nowrap;
   text-overflow: ellipsis;
@@ -3863,4 +3899,13 @@ body.edit-mode .category-section[data-collapsed="true"] .category-body {
 .api-ep-summary {
   margin-left: auto;
   font-size: 0.82rem;
+}
+
+/* Like upstream's Mantine ScrollArea: scrollable widget content has no visible scrollbar track. */
+.grid-item * {
+  scrollbar-width: none;
+}
+
+.grid-item *::-webkit-scrollbar {
+  display: none;
 }
