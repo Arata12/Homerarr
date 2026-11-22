@@ -776,7 +776,7 @@ fn merge_releases(results: Vec<(&IntegrationContext, Vec<MediaRelease>)>) -> Vec
         .into_iter()
         .flat_map(|(ctx, list)| list.into_iter().map(move |release| (ctx, release)))
         .collect();
-    releases.sort_by(|a, b| b.1.release_date.cmp(&a.1.release_date));
+    releases.sort_by_key(|a| std::cmp::Reverse(a.1.release_date));
     releases
         .into_iter()
         .map(|(ctx, release)| tag_integration(to_json_value(&release), ctx))
