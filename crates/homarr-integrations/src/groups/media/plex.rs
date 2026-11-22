@@ -710,19 +710,39 @@ fn map_releases_with_images(
     (releases, raw_images)
 }
 
+/// Plex serves artwork at full resolution (often several MB); its photo transcoder scales it
+/// down, like the `maxWidth` used for Jellyfin images.
+fn plex_transcode_url(artwork: &url::Url, width: u32, height: u32) -> Option<url::Url> {
+    let mut path = artwork.path().to_string();
+    if let Some(query) = artwork.query() {
+        path.push('?');
+        path.push_str(query);
+    }
+    let mut url = artwork.join("/photo/:/transcode").ok()?;
+    url.query_pairs_mut()
+        .append_pair("width", &width.to_string())
+        .append_pair("height", &height.to_string())
+        .append_pair("minSize", "1")
+        .append_pair("upscale", "0")
+        .append_pair("url", &path);
+    Some(url)
+}
+
 async fn proxy_plex_artwork(
     proxy: &dyn crate::runtime::ImageProxyProvider,
     base: &url::Url,
     plex_origin: &str,
     token: Option<&str>,
     raw_url: &str,
+    (width, height): (u32, u32),
 ) -> Option<String> {
-    let resolved = base.join(raw_url.trim()).ok()?;
+    let mut resolved = base.join(raw_url.trim()).ok()?;
     if !matches!(resolved.scheme(), "http" | "https") {
         return None;
     }
     let mut headers = HashMap::new();
     let trusted_origin = if resolved.origin().ascii_serialization() == plex_origin {
+        resolved = plex_transcode_url(&resolved, width, height)?;
         if let Some(token) = token {
             headers.insert("X-Plex-Token".to_string(), token.to_string());
         }
@@ -750,13 +770,17 @@ async fn proxy_release_images(
     let futures = raw_images.iter().map(|raw| async {
         let poster_fut = async {
             match raw.poster.as_deref() {
-                Some(path) => proxy_plex_artwork(proxy, &base, &plex_origin, token, path).await,
+                Some(path) => {
+                    proxy_plex_artwork(proxy, &base, &plex_origin, token, path, (328, 492)).await
+                }
                 None => None,
             }
         };
         let backdrop_fut = async {
             match raw.backdrop.as_deref() {
-                Some(path) => proxy_plex_artwork(proxy, &base, &plex_origin, token, path).await,
+                Some(path) => {
+                    proxy_plex_artwork(proxy, &base, &plex_origin, token, path, (960, 540)).await
+                }
                 None => None,
             }
         };
@@ -866,6 +890,17 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+
+    #[test]
+    fn plex_artwork_goes_through_the_photo_transcoder() {
+        let art = url::Url::parse("http://plex:32400/library/metadata/7/art/123").unwrap();
+        let url = plex_transcode_url(&art, 960, 540).unwrap();
+        assert_eq!(url.path(), "/photo/:/transcode");
+        let pairs: HashMap<_, _> = url.query_pairs().into_owned().collect();
+        assert_eq!(pairs["width"], "960");
+        assert_eq!(pairs["height"], "540");
+        assert_eq!(pairs["url"], "/library/metadata/7/art/123");
+    }
 
     fn ctx() -> IntegrationContext {
         IntegrationContext {
