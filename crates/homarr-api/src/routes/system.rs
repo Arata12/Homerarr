@@ -365,7 +365,9 @@ pub async fn import_backup(
     admin.require_writable(state.demo_read_only_active())?;
     let summary = import_backup_json(&state.db, &bundle).await?;
     let trusted = settings::list_trusted_hostnames(&state.db).await?;
-    let pins = trusted.iter().map(|t| (t.hostname.as_str(), t.thumbprint.as_str()));
+    let pins = trusted
+        .iter()
+        .map(|t| (t.hostname.as_str(), t.thumbprint.as_str()));
     state.http.set_trusted_hostnames(pins)?;
     Ok(Json(json!({ "ok": true, "summary": summary })))
 }

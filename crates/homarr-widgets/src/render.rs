@@ -1460,9 +1460,7 @@ fn render_cluster_health(options: &Value, name: &str, cluster: &Value) -> Markup
     };
     let nodes = list("nodes");
     let running_nodes: Vec<&Value> = nodes.iter().filter(|n| resource_running(n)).collect();
-    let sum = |a: &str, b: &str| -> f64 {
-        running_nodes.iter().map(|n| nested_f64(n, a, b)).sum()
-    };
+    let sum = |a: &str, b: &str| -> f64 { running_nodes.iter().map(|n| nested_f64(n, a, b)).sum() };
     let cores = sum("cpu", "cores");
     let used_cpu: f64 = running_nodes
         .iter()
@@ -1470,8 +1468,16 @@ fn render_cluster_health(options: &Value, name: &str, cluster: &Value) -> Markup
         .sum();
     let used_mem = sum("memory", "used");
     let total_mem = sum("memory", "total");
-    let cpu_pct = if cores > 0.0 { used_cpu / cores * 100.0 } else { 0.0 };
-    let mem_pct = if total_mem > 0.0 { used_mem / total_mem * 100.0 } else { 0.0 };
+    let cpu_pct = if cores > 0.0 {
+        used_cpu / cores * 100.0
+    } else {
+        0.0
+    };
+    let mem_pct = if total_mem > 0.0 {
+        used_mem / total_mem * 100.0
+    } else {
+        0.0
+    };
     let uptime = nodes
         .iter()
         .filter_map(|n| f64_at(n, "uptime"))
@@ -1630,14 +1636,20 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
             .filter_map(|g| g.get("monitors").and_then(Value::as_array))
             .flatten()
         {
-            let key = (page_index, monitor.get("id").and_then(Value::as_i64).unwrap_or(-1));
+            let key = (
+                page_index,
+                monitor.get("id").and_then(Value::as_i64).unwrap_or(-1),
+            );
             if !seen.contains(&key) {
                 seen.push(key);
                 monitors.push(monitor);
             }
         }
     }
-    let up = monitors.iter().filter(|m| monitor_status(m) == "up").count();
+    let up = monitors
+        .iter()
+        .filter(|m| monitor_status(m) == "up")
+        .count();
     let down = monitors
         .iter()
         .filter(|m| monitor_status(m) == "down")
@@ -1741,7 +1753,11 @@ fn format_bitrate_kbps(kbps: f64) -> Option<String> {
 
 /// Resolution tier label as Plex/Jellyfin show it (a 1920x804 encode is still "1080p").
 fn resolution_label(width: f64, height: f64) -> String {
-    let (short, long) = if height > width { (width, height) } else { (height, width) };
+    let (short, long) = if height > width {
+        (width, height)
+    } else {
+        (height, width)
+    };
     let effective = short.max((long * 9.0 / 16.0).round());
     [4320.0, 2160.0, 1440.0, 1080.0, 720.0, 480.0, 360.0, 240.0]
         .into_iter()
@@ -1783,7 +1799,10 @@ fn render_media_sessions(options: &Value, data: &Value) -> Markup {
         .count();
     let total_kbps: f64 = playing
         .iter()
-        .filter_map(|s| s.pointer("/currentlyPlaying/metadata/bitrateKbps")?.as_f64())
+        .filter_map(|s| {
+            s.pointer("/currentlyPlaying/metadata/bitrateKbps")?
+                .as_f64()
+        })
         .sum();
     let total_bitrate = format_bitrate_kbps(total_kbps).filter(|_| show_bitrate);
 
@@ -1811,7 +1830,10 @@ fn render_media_sessions(options: &Value, data: &Value) -> Markup {
 }
 
 fn render_media_session(s: &Value, show_bitrate: bool, show_location: bool) -> Markup {
-    let user = s.pointer("/user/username").and_then(Value::as_str).unwrap_or("");
+    let user = s
+        .pointer("/user/username")
+        .and_then(Value::as_str)
+        .unwrap_or("");
     let client = str_at(s, "sessionName").unwrap_or("Player");
     let source = str_at(s, "integrationName");
     let Some(p) = s.get("currentlyPlaying").filter(|p| !p.is_null()) else {
@@ -1854,8 +1876,11 @@ fn render_media_session(s: &Value, show_bitrate: bool, show_location: bool) -> M
         _ => None,
     };
     let metadata = p.get("metadata").filter(|m| !m.is_null());
-    let (status, is_transcoding) =
-        playback_status(metadata.and_then(|m| m.get("transcoding")).filter(|t| !t.is_null()));
+    let (status, is_transcoding) = playback_status(
+        metadata
+            .and_then(|m| m.get("transcoding"))
+            .filter(|t| !t.is_null()),
+    );
     let resolution = metadata
         .and_then(|m| {
             m.pointer("/transcoding/resolution")
@@ -2487,7 +2512,10 @@ mod data_widget_tests {
         assert!(html.contains("50%"), "cluster RAM: {html}");
         assert!(html.contains("Nodes") && html.contains("Virtual machines"));
         assert!(html.contains("1/2"), "VMs x/y: {html}");
-        assert!(html.contains("25.0%") && html.contains("50.0%"), "node row: {html}");
+        assert!(
+            html.contains("25.0%") && html.contains("50.0%"),
+            "node row: {html}"
+        );
         assert!(!html.contains("Storage"));
         // A failing integration shows an error line instead of disappearing.
         assert!(html.contains("Glances") && html.contains("Unable to connect"));

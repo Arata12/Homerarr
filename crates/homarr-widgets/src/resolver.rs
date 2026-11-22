@@ -356,7 +356,8 @@ impl WidgetResolver {
                 let sessions: Vec<Value> = ok
                     .into_iter()
                     .flat_map(|(ctx, list)| {
-                        list.into_iter().map(move |session| tag_integration(session, ctx))
+                        list.into_iter()
+                            .map(move |session| tag_integration(session, ctx))
                     })
                     .collect();
                 Ok(with_errors(json!({ "sessions": sessions }), count, errors))
@@ -376,10 +377,11 @@ impl WidgetResolver {
                 Err(e) => Ok(json!({ "error": e.to_string() })),
             },
             W::MediaReleases => {
-                let results = join_all(contexts.iter().map(|ctx| async move {
-                    (ctx, self.integrations.media_releases(ctx).await)
-                }))
-                .await;
+                let results =
+                    join_all(contexts.iter().map(|ctx| async move {
+                        (ctx, self.integrations.media_releases(ctx).await)
+                    }))
+                    .await;
                 let (ok, errors) = split_results(results);
                 let count = ok.len();
                 let releases = merge_releases(ok);

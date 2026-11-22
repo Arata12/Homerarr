@@ -153,13 +153,8 @@ impl rustls::client::danger::ServerCertVerifier for PinnedHostVerifier {
         {
             return Ok(rustls::client::danger::ServerCertVerified::assertion());
         }
-        self.inner.verify_server_cert(
-            end_entity,
-            intermediates,
-            server_name,
-            ocsp_response,
-            now,
-        )
+        self.inner
+            .verify_server_cert(end_entity, intermediates, server_name, ocsp_response, now)
     }
 
     fn verify_tls12_signature(
