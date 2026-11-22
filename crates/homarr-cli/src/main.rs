@@ -73,7 +73,9 @@ enum DbCmd {
     Migrate,
     Seed,
     /// Copies an upstream Homarr v1/v2 SQLite database into the configured, empty SQLite database.
-    ImportLegacy { path: PathBuf },
+    ImportLegacy {
+        path: PathBuf,
+    },
 }
 
 fn ensure_sqlite_parent_dir(driver: DatabaseDriver, url: &str) {

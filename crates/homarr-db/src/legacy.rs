@@ -375,15 +375,27 @@ mod tests {
             .expect("user copied");
         assert_eq!(user.name.as_deref(), Some("admin"));
         assert_eq!(
-            count(pool, r#"SELECT COUNT(*) FROM "board" WHERE "id" = 'b1' AND "creator_id" = 'u1'"#).await,
+            count(
+                pool,
+                r#"SELECT COUNT(*) FROM "board" WHERE "id" = 'b1' AND "creator_id" = 'u1'"#
+            )
+            .await,
             1
         );
         assert_eq!(
-            count(pool, r#"SELECT COUNT(*) FROM "integration" WHERE "id" = 'i1' AND "restricted" = 0"#).await,
+            count(
+                pool,
+                r#"SELECT COUNT(*) FROM "integration" WHERE "id" = 'i1' AND "restricted" = 0"#
+            )
+            .await,
             1
         );
         assert_eq!(
-            count(pool, r#"SELECT COUNT(*) FROM "integrationSecret" WHERE "value" = 'cipher.iv'"#).await,
+            count(
+                pool,
+                r#"SELECT COUNT(*) FROM "integrationSecret" WHERE "value" = 'cipher.iv'"#
+            )
+            .await,
             1
         );
         assert_eq!(count(pool, r#"SELECT COUNT(*) FROM "session""#).await, 0);
