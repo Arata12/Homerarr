@@ -106,9 +106,7 @@ code {
   align-items: center;
   gap: 12px;
   height: 100%;
-  max-width: 1640px;
-  margin: 0 auto;
-  padding: 0 18px;
+  padding: 0 16px;
 }
 
 .header-zone {
@@ -463,9 +461,10 @@ body.edit-mode #edit-mode-btn {
   padding: 20px;
 }
 
+/* Like upstream, boards span the full window width. */
 .main-container.board-canvas {
-  max-width: 1640px;
-  padding: 18px 20px 44px;
+  max-width: none;
+  padding: 16px 16px 44px;
 }
 
 .main-container.main-auth {
@@ -560,13 +559,28 @@ body.edit-mode .edit-mode-bar {
   width: 100%;
 }
 
+/* Registered so the cell width resolves against the section and is inherited as px. */
+@property --cell {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 110px;
+}
+
 /* Like upstream, board cells are square: a row is as tall as a column is wide. */
 .board-sections-stack > .board-section {
   container-type: inline-size;
 }
 
 .board-sections-stack > .board-section > .board-grid[data-layouts] {
-  grid-auto-rows: calc((100cqw - (var(--board-cols, 12) - 1) * 12px) / var(--board-cols, 12));
+  --cell: calc((100cqw - (var(--board-cols, 12) - 1) * 12px) / var(--board-cols, 12));
+  grid-auto-rows: var(--cell);
+}
+
+/* Upstream scales the whole canvas with the cell size; zoom widget content by pitch / 188px
+   (tan(atan2()) yields the unitless ratio), calibrated so text matches upstream side by side
+   (1.0 at 10 columns on 1920px), never below 1 so small screens are unchanged. */
+.grid-item > .widget-shell {
+  zoom: clamp(1, tan(atan2(var(--cell) + 12px, 188px)), 1.5);
 }
 
 .section-header {
@@ -917,6 +931,7 @@ body.edit-mode .board-container-open-all {
 }
 
 /* App Tile Widget */
+/* Like upstream: name on top, icon filling the rest, ping dot in the corner. */
 .app-tile {
   height: 100%;
   width: 100%;
@@ -924,12 +939,12 @@ body.edit-mode .board-container-open-all {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 7px;
+  gap: 2px;
   text-align: center;
   color: var(--text-strong);
   position: relative;
   text-decoration: none;
-  padding: 4px;
+  padding: 0;
 }
 
 .app-tile:hover {
@@ -937,19 +952,23 @@ body.edit-mode .board-container-open-all {
 }
 
 .app-icon {
-  width: 44px;
-  height: 44px;
+  flex: 1 1 0;
+  min-height: 40%;
+  width: 100%;
   object-fit: contain;
-  transition: transform 160ms ease;
+  transform: scale(0.8);
+  transition: transform 200ms ease-in-out;
 }
 
 .app-tile:hover .app-icon {
-  transform: scale(1.07);
+  transform: scale(0.9);
 }
 
 .app-name {
+  flex-shrink: 0;
   font-weight: 600;
-  font-size: 0.84rem;
+  font-size: 0.7rem;
+  color: var(--text-muted);
   line-height: 1.2;
   max-width: 100%;
   overflow: hidden;
@@ -959,8 +978,8 @@ body.edit-mode .board-container-open-all {
 
 .ping-dot {
   position: absolute;
-  bottom: 2px;
-  right: 2px;
+  bottom: -2px;
+  right: -2px;
   width: 10px;
   height: 10px;
   border-radius: 50%;
