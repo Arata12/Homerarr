@@ -84,6 +84,13 @@ impl WidgetResolver {
         result
     }
 
+    /// Drops cached data of every widget bound to `integration_id`, so the next card refresh
+    /// after an action (DNS toggle, request approval, ...) shows the new state.
+    pub fn invalidate_integration(&self, integration_id: &str) {
+        let mut entries = self.cache.entries.lock().unwrap_or_else(|e| e.into_inner());
+        entries.retain(|key, _| !key_has_integration(key, integration_id));
+    }
+
     async fn resolve_uncached(
         &self,
         kind: WidgetKind,
@@ -335,7 +342,11 @@ impl WidgetResolver {
             }
             W::MediaRequestsRequestList | W::MediaRequestsRequestStats => {
                 match self.integrations.get_media_requests(first).await {
-                    Ok((items, stats)) => Ok(json!({ "items": items, "stats": stats })),
+                    Ok((items, stats)) => Ok(json!({
+                        "items": items,
+                        "stats": stats,
+                        "integrationId": first.id,
+                    })),
                     Err(e) => Ok(json!({ "error": e.to_string() })),
                 }
             }
@@ -358,13 +369,15 @@ impl WidgetResolver {
             W::DnsHoleSummary | W::DnsHoleControls => {
                 let mut summaries = Vec::new();
                 for ctx in &contexts {
-                    if let Ok(s) = self.integrations.get_dns_hole_summary(ctx).await {
-                        summaries.push(json!({
+                    // Keep failed integrations so the widget can show them instead of hiding them.
+                    summaries.push(match self.integrations.get_dns_hole_summary(ctx).await {
+                        Ok(s) => json!({ "integrationId": ctx.id, "name": ctx.name, "summary": s }),
+                        Err(e) => json!({
                             "integrationId": ctx.id,
                             "name": ctx.name,
-                            "summary": s,
-                        }));
-                    }
+                            "error": e.to_string(),
+                        }),
+                    });
                 }
                 Ok(json!({ "items": summaries }))
             }
@@ -558,6 +571,11 @@ fn cache_key(kind: WidgetKind, options: &Value, integration_ids: &[String]) -> S
     )
 }
 
+fn key_has_integration(key: &str, integration_id: &str) -> bool {
+    key.rsplit_once('|')
+        .is_some_and(|(_, ids)| ids.split(',').any(|id| id == integration_id))
+}
+
 fn is_error_payload(value: &Value) -> bool {
     value.get("error").is_some() || value.get("missingIntegration").is_some()
 }
@@ -716,5 +734,14 @@ mod tests {
         cache.store(k1.clone(), &Ok(json!({ "error": "down" })), ttl, t0);
         assert!(matches!(cache.lookup(&k1, t0), Lookup::Hit(_)));
         assert!(matches!(cache.lookup(&k1, t0 + ERROR_TTL), Lookup::Miss));
+    }
+
+    #[test]
+    fn invalidation_matches_exact_integration_ids() {
+        let ids = ["a".to_string(), "b2".to_string()];
+        let key = cache_key(WidgetKind::DnsHoleControls, &json!({ "x": "a|b" }), &ids);
+        assert!(key_has_integration(&key, "b2"));
+        assert!(key_has_integration(&key, "a"));
+        assert!(!key_has_integration(&key, "b"));
     }
 }

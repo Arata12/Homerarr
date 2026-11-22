@@ -842,6 +842,44 @@
     }
   });
 
+  // Widget integration actions: [data-integration-action] + space-separated [data-integration-ids]
+  // + optional JSON [data-action-input] → POST /api/integrations/{id}/actions, then refresh the card.
+  document.addEventListener("click", async function (e) {
+    const btn = e.target instanceof Element ? e.target.closest("[data-integration-action]") : null;
+    if (!btn || btn.getAttribute("aria-busy") === "true") return;
+    const action = btn.getAttribute("data-integration-action");
+    const ids = (btn.getAttribute("data-integration-ids") || "").split(/\s+/).filter(Boolean);
+    let input = null;
+    try {
+      input = JSON.parse(btn.getAttribute("data-action-input") || "null");
+    } catch (_) {}
+    const menu = btn.closest("details");
+    if (menu) menu.open = false;
+    btn.setAttribute("aria-busy", "true");
+    const results = await Promise.all(
+      ids.map((id) =>
+        fetch("/api/integrations/" + encodeURIComponent(id) + "/actions", {
+          method: "POST",
+          credentials: "same-origin",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action, input }),
+        })
+          .then(async (resp) => ({ ok: resp.ok, data: await resp.json().catch(() => ({})) }))
+          .catch(() => ({ ok: false, data: {} }))
+      )
+    );
+    btn.removeAttribute("aria-busy");
+    const failed = results.find((r) => !r.ok);
+    if (failed) {
+      toast((failed.data.error && failed.data.error.message) || "Action failed", "error");
+    } else {
+      toast("Action completed", "ok");
+    }
+    const item = btn.closest(".grid-item");
+    if (item && window.homarrRefreshWidget) window.homarrRefreshWidget(item);
+    else location.reload();
+  });
+
   // Declarative UI actions ([data-action]); replaces inline on* handlers so the CSP can forbid inline script.
   const ACTIONS = {
     click: {
@@ -980,6 +1018,12 @@
       widgets.push(w);
       schedule(w, jitter(w.base));
     });
+    // Re-fetch one card right away, e.g. after a widget action changed its integration's state.
+    window.homarrRefreshWidget = function (el) {
+      const w = widgets.find((x) => x.el === el);
+      if (w) refresh(w);
+      else location.reload();
+    };
     if (!widgets.length) return;
     document.addEventListener("visibilitychange", resume);
     // Edit mode toggles a body class; resume once it is left.

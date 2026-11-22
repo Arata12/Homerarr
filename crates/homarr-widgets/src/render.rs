@@ -294,10 +294,12 @@ fn render_widget(
         WidgetKind::Downloads => render_downloads(data),
         WidgetKind::MediaServer => render_media_sessions(data),
         WidgetKind::MediaRequestsRequestList | WidgetKind::MediaRequestsRequestStats => {
-            render_media_requests(kind, data)
+            render_media_requests(kind, options, data)
         }
         WidgetKind::Calendar => render_calendar(data),
-        WidgetKind::DnsHoleSummary | WidgetKind::DnsHoleControls => render_dns_hole(kind, data),
+        WidgetKind::DnsHoleSummary | WidgetKind::DnsHoleControls => {
+            render_dns_hole(kind, options, data)
+        }
         WidgetKind::HealthMonitoring | WidgetKind::SystemResources | WidgetKind::SystemDisks => {
             render_health(kind, data)
         }
@@ -1184,7 +1186,10 @@ fn stat_pill(label: &str, value: impl maud::Render) -> Markup {
     html! { div.stat-pill { span.label { (label) } strong { (value) } } }
 }
 
-fn render_media_requests(kind: WidgetKind, data: &Value) -> Markup {
+fn render_media_requests(kind: WidgetKind, options: &Value, data: &Value) -> Markup {
+    if let Some(err_html) = render_error_box(data) {
+        return err_html;
+    }
     if kind == WidgetKind::MediaRequestsRequestStats {
         let s = data.get("stats");
         let count = |key: &str| {
@@ -1200,21 +1205,90 @@ fn render_media_requests(kind: WidgetKind, data: &Value) -> Markup {
             }
         };
     }
-    let items = data
-        .get("items")
-        .and_then(|v| v.as_array())
-        .cloned()
+    // An empty or missing filter means "all statuses", like upstream.
+    let status_filter: Vec<&str> = options
+        .get("statusFilter")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().filter_map(Value::as_str).collect())
         .unwrap_or_default();
+    let recent_days = options
+        .get("recentDays")
+        .and_then(Value::as_u64)
+        .unwrap_or(0);
+    let cutoff = (recent_days > 0)
+        .then(|| chrono::Utc::now() - chrono::Duration::days(recent_days.min(365) as i64));
+    let new_tab = options
+        .get("linksTargetNewTab")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let integration_id = str_field(data, "integrationId");
+    let items: Vec<&Value> = data
+        .get("items")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter(|item| {
+            let status = str_field(item, "status");
+            status_filter.is_empty() || status_filter.contains(&status)
+        })
+        .filter(|item| {
+            let created = chrono::DateTime::parse_from_rfc3339(str_field(item, "createdAt"));
+            cutoff.is_none_or(|cutoff| created.is_ok_and(|created| created >= cutoff))
+        })
+        .collect();
+    if items.is_empty() {
+        return empty_box("No media requests");
+    }
     html! {
-        ul.compact-list {
-            @for item in items.iter().take(8) {
-                li {
-                    span { (item.get("title").and_then(|v| v.as_str()).unwrap_or("")) }
-                    " "
-                    span.badge { (item.get("status").and_then(|v| v.as_str()).unwrap_or("")) }
+        ul.compact-list.media-request-list {
+            @for item in items.iter().take(20) {
+                @let status = str_field(item, "status");
+                @let availability = str_field(item, "availability");
+                @let href = safe_url(str_field(item, "href"));
+                @let poster = safe_url(str_field(item, "posterUrl"));
+                @let year = str_field(item, "airDate").get(..4).unwrap_or("");
+                @let input = serde_json::json!({ "requestId": str_field(item, "id") }).to_string();
+                li.media-request {
+                    @if poster != "#" {
+                        img.media-request-poster src=(poster) alt="" loading="lazy" data-hide-on-error;
+                    }
+                    div.media-request-info {
+                        div.media-request-title {
+                            @if href != "#" {
+                                a href=(href) target=[new_tab.then_some("_blank")] rel="noopener noreferrer" { (str_field(item, "title")) }
+                            } @else {
+                                (str_field(item, "title"))
+                            }
+                            @if !year.is_empty() { " " span.metric-sub { "(" (year) ")" } }
+                        }
+                        div.metric-sub { "Requested by " (str_field(item, "requestedBy")) }
+                        div.media-request-badges {
+                            span class={ "badge " (request_status_class(status)) } { (status) }
+                            @if !availability.is_empty() { span.badge { (availability) } }
+                        }
+                    }
+                    @if status == "pending" && !integration_id.is_empty() {
+                        div.widget-actions {
+                            button.btn.btn-sm.btn-primary type="button" data-integration-action="mediaRequestApprove" data-integration-ids=(integration_id) data-action-input=(input) { "Approve" }
+                            button.btn.btn-sm.btn-danger type="button" data-integration-action="mediaRequestDecline" data-integration-ids=(integration_id) data-action-input=(input) { "Decline" }
+                        }
+                    }
                 }
             }
         }
+    }
+}
+
+fn str_field<'a>(v: &'a Value, key: &str) -> &'a str {
+    v.get(key).and_then(Value::as_str).unwrap_or("")
+}
+
+fn request_status_class(status: &str) -> &'static str {
+    match status {
+        "approved" | "completed" => "up",
+        "declined" | "failed" => "down",
+        "pending" => "warn",
+        _ => "",
     }
 }
 
@@ -1265,33 +1339,65 @@ fn dns_tile(cls: &str, svg: &'static str, value: &str, label: &str) -> Markup {
     }
 }
 
-fn render_dns_hole(kind: WidgetKind, data: &Value) -> Markup {
-    let first = data
-        .get("items")
-        .and_then(|v| v.as_array())
-        .and_then(|a| a.first())
-        .and_then(|x| x.get("summary"));
-    let Some(s) = first else {
-        return empty_box("DNS Hole metrics unavailable");
-    };
-    let count = |key: &str| s.get(key).and_then(|v| v.as_u64()).unwrap_or(0);
-    let pct = s
-        .get("adsPercentageToday")
-        .and_then(|v| v.as_f64())
-        .unwrap_or(0.0);
-    let status = s
-        .get("status")
-        .and_then(|v| v.as_str())
-        .unwrap_or("enabled");
+/// Disable durations offered by the DNS hole controls, in seconds (0 = until re-enabled).
+const DNS_DISABLE_DURATIONS: [(u64, &str); 4] = [
+    (300, "5 minutes"),
+    (1800, "30 minutes"),
+    (3600, "1 hour"),
+    (0, "Until re-enabled"),
+];
 
+/// Disable button with a duration menu (`<details>`, no JS needed to open it).
+fn dns_disable_menu(ids: &str, label: &str) -> Markup {
     html! {
-        @if kind == WidgetKind::DnsHoleControls {
-            div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px" {
-                span.metric-sub { "Pi-hole / AdGuard" }
-                span.badge.up { (status) }
+        details.dns-disable-menu {
+            summary.btn.btn-sm.btn-danger { (label) }
+            div.dns-disable-options {
+                @for (secs, text) in DNS_DISABLE_DURATIONS {
+                    button.btn.btn-sm type="button" data-integration-action="dnsHoleDisable" data-integration-ids=(ids)
+                        data-action-input=(serde_json::json!({ "duration": secs }).to_string()) { (text) }
+                }
             }
         }
-        div.dns-hole-grid {
+    }
+}
+
+fn render_dns_hole(kind: WidgetKind, options: &Value, data: &Value) -> Markup {
+    let items: Vec<&Value> = data
+        .get("items")
+        .and_then(Value::as_array)
+        .map(|a| a.iter().collect())
+        .unwrap_or_default();
+    if kind == WidgetKind::DnsHoleControls {
+        return render_dns_controls(options, &items);
+    }
+
+    // Summary: sum every reachable integration, like upstream.
+    let summaries: Vec<&Value> = items.iter().filter_map(|i| i.get("summary")).collect();
+    if summaries.is_empty() {
+        let first_error = items.iter().find_map(|i| i.get("error")?.as_str());
+        return empty_box(first_error.unwrap_or("DNS Hole metrics unavailable"));
+    }
+    let count = |key: &str| {
+        summaries
+            .iter()
+            .map(|s| s.get(key).and_then(Value::as_u64).unwrap_or(0))
+            .sum::<u64>()
+    };
+    let queries = count("dnsQueriesToday");
+    let pct = if queries > 0 {
+        count("adsBlockedToday") as f64 * 100.0 / queries as f64
+    } else {
+        0.0
+    };
+    let layout = match options.get("layout").and_then(Value::as_str) {
+        Some("row") => "dns-layout-row",
+        Some("column") => "dns-layout-column",
+        _ => "",
+    };
+
+    html! {
+        div class={ "dns-hole-grid " (layout) } {
             (dns_tile("dns-red", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13.252 20.601c-.408 .155 -.826 .288 -1.252 .399a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.19 7.357" /><path d="M22 22l-5 -5" /><path d="M17 22l5 -5" /></svg>"#,
                 &format_compact_count(count("adsBlockedToday")), "Ads Blocked Today"))
             (dns_tile("dns-yellow", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 17m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M7 7m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M6 18l12 -12" /></svg>"#,
@@ -1300,6 +1406,65 @@ fn render_dns_hole(kind: WidgetKind, data: &Value) -> Markup {
                 &format_compact_count(count("dnsQueriesToday")), "DNS Queries Today"))
             (dns_tile("dns-green", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg>"#,
                 &format_compact_count(count("domainsBeingBlocked")), "Domains on Blocklist"))
+        }
+    }
+}
+
+fn is_dns_disabled(item: &Value) -> bool {
+    item.pointer("/summary/status").and_then(Value::as_str) == Some("disabled")
+}
+
+fn render_dns_controls(options: &Value, items: &[&Value]) -> Markup {
+    if items.is_empty() {
+        return empty_box("DNS Hole metrics unavailable");
+    }
+    // Integrations that answered, split by state; failed ones are left out of "toggle all".
+    let ids_where_disabled = |disabled: bool| {
+        items
+            .iter()
+            .filter(|i| i.get("summary").is_some() && is_dns_disabled(i) == disabled)
+            .map(|i| str_field(i, "integrationId"))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let (disabled_ids, enabled_ids) = (ids_where_disabled(true), ids_where_disabled(false));
+    let show_all = options
+        .get("showToggleAllButtons")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    html! {
+        @if show_all && (!disabled_ids.is_empty() || !enabled_ids.is_empty()) {
+            div.widget-actions.dns-toggle-all {
+                @if !disabled_ids.is_empty() {
+                    button.btn.btn-sm.btn-primary type="button" data-integration-action="dnsHoleEnable" data-integration-ids=(disabled_ids) { "Enable all" }
+                }
+                @if !enabled_ids.is_empty() { (dns_disable_menu(&enabled_ids, "Disable all")) }
+            }
+        }
+        ul.compact-list.dns-controls {
+            @for item in items {
+                @let id = str_field(item, "integrationId");
+                @let name = str_field(item, "name");
+                @if let Some(err) = item.get("error").and_then(Value::as_str) {
+                    li.dns-control-row {
+                        div { strong { (name) } div.metric-sub { (err) } }
+                        span.badge.down { "error" }
+                    }
+                } @else {
+                    @let enabled = !is_dns_disabled(item);
+                    li.dns-control-row {
+                        div {
+                            strong { (name) } " "
+                            span class={ "badge " (if enabled { "up" } else { "down" }) } { (if enabled { "enabled" } else { "disabled" }) }
+                        }
+                        @if enabled {
+                            (dns_disable_menu(id, "Disable"))
+                        } @else {
+                            button.btn.btn-sm.btn-primary type="button" data-integration-action="dnsHoleEnable" data-integration-ids=(id) { "Enable" }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -1921,5 +2086,86 @@ mod app_ping_tests {
         .into_string();
         assert!(html.contains(r#"data-ping-url="http://10.0.0.5:7878/""#));
         assert!(html.contains("ping-dot"));
+    }
+}
+
+#[cfg(test)]
+mod interactive_widget_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn summary(status: &str, blocked: u64, queries: u64, domains: u64) -> Value {
+        json!({
+            "status": status, "adsBlockedToday": blocked, "dnsQueriesToday": queries,
+            "domainsBeingBlocked": domains, "adsPercentageToday": 99.0
+        })
+    }
+
+    fn dns(kind: WidgetKind, options: Value, data: &Value) -> String {
+        render_dns_hole(kind, &options, data).into_string()
+    }
+
+    fn requests(options: Value, data: &Value) -> String {
+        let kind = WidgetKind::MediaRequestsRequestList;
+        render_media_requests(kind, &options, data).into_string()
+    }
+
+    #[test]
+    fn dns_controls_show_each_integration_state_and_errors() {
+        let data = json!({ "items": [
+            { "integrationId": "a", "name": "AdGuard 1", "summary": summary("enabled", 1, 2, 3) },
+            { "integrationId": "b", "name": "AdGuard 2", "summary": summary("disabled", 1, 2, 3) },
+            { "integrationId": "c", "name": "Pi-hole", "error": "connection refused" },
+        ]});
+        let html = dns(WidgetKind::DnsHoleControls, json!({}), &data);
+        let enable_b = r#""dnsHoleEnable" data-integration-ids="b""#;
+        let disable_a = r#""dnsHoleDisable" data-integration-ids="a""#;
+        assert!(html.contains(enable_b), "{html}");
+        assert!(html.contains(disable_a), "{html}");
+        assert!(html.contains("connection refused"));
+        // The failed integration gets no toggle.
+        assert!(!html.contains(r#"data-integration-ids="c""#));
+        assert!(html.contains("Enable all"));
+        assert!(html.contains("Disable all"));
+
+        let options = json!({ "showToggleAllButtons": false });
+        let hidden = dns(WidgetKind::DnsHoleControls, options, &data);
+        assert!(!hidden.contains("Enable all"));
+    }
+
+    #[test]
+    fn dns_summary_sums_integrations() {
+        let data = json!({ "items": [
+            { "integrationId": "a", "name": "A", "summary": summary("enabled", 100, 1000, 192_000) },
+            { "integrationId": "b", "name": "B", "summary": summary("enabled", 300, 1000, 192_000) },
+            { "integrationId": "c", "name": "C", "error": "down" },
+        ]});
+        let html = dns(WidgetKind::DnsHoleSummary, json!({}), &data);
+        assert!(html.contains("384.0k"), "{html}");
+        assert!(html.contains("20.0%"), "{html}");
+        assert!(html.contains("2.0k"), "{html}");
+    }
+
+    #[test]
+    fn media_request_list_filters_and_offers_approval() {
+        let data = json!({ "integrationId": "s1", "items": [
+            { "id": "7", "title": "Andor", "status": "pending", "requestedBy": "alex",
+              "createdAt": "2024-01-01T00:00:00Z", "href": "https://req.example/tv/1",
+              "airDate": "2022-09-21T00:00:00Z", "availability": "unknown" },
+            { "id": "8", "title": "Dune", "status": "declined", "requestedBy": "maria",
+              "createdAt": "2024-01-01T00:00:00Z" },
+        ]});
+        let html = requests(json!({}), &data);
+        assert!(html.contains("(2022)"));
+        assert!(html.contains("Dune"));
+        assert!(html.contains("mediaRequestApprove"));
+        assert!(html.contains("{&quot;requestId&quot;:&quot;7&quot;}"));
+
+        let filtered = requests(json!({ "statusFilter": ["declined"] }), &data);
+        assert!(!filtered.contains("Andor"));
+        assert!(filtered.contains("Dune"));
+
+        let recent = requests(json!({ "recentDays": 7 }), &data);
+        assert!(!recent.contains("Andor"));
     }
 }

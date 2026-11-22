@@ -1190,6 +1190,100 @@ body.edit-mode .board-container-open-all {
   }
 }
 
+.dns-hole-grid.dns-layout-row {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: minmax(0, 1fr);
+}
+
+.dns-hole-grid.dns-layout-column {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+}
+
+/* Interactive widget actions (DNS hole controls, media request approval) */
+.widget-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  align-items: center;
+}
+
+.widget-actions.dns-toggle-all {
+  margin-bottom: 8px;
+}
+
+[data-integration-action][aria-busy="true"] {
+  opacity: 0.6;
+  pointer-events: none;
+}
+
+.dns-disable-menu {
+  position: relative;
+}
+
+.dns-disable-menu > summary {
+  list-style: none;
+}
+
+.dns-disable-menu > summary::-webkit-details-marker {
+  display: none;
+}
+
+.dns-disable-options {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  margin-top: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  background: var(--surface, var(--bg));
+  white-space: nowrap;
+}
+
+.compact-list li.media-request {
+  justify-content: flex-start;
+}
+
+.media-request-poster {
+  width: 34px;
+  height: 51px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.media-request-info {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.media-request-title {
+  font-weight: 600;
+  color: var(--text-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.media-request-badges {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.badge.warn {
+  color: var(--mantine-yellow);
+  border-color: color-mix(in srgb, var(--mantine-yellow) 42%, transparent);
+  background: color-mix(in srgb, var(--mantine-yellow) 14%, transparent);
+}
+
 /* Downloads & Progress Bars */
 .downloads-summary {
   display: flex;
