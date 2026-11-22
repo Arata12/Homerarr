@@ -95,9 +95,9 @@ code {
   top: 0;
   z-index: 40;
   height: 60px;
-  background: color-mix(in srgb, var(--surface) 84%, transparent);
+  /* Near-opaque instead of a backdrop blur: blurring the sticky header repaints on every scroll frame. */
+  background: color-mix(in srgb, var(--surface) 95%, transparent);
   border-bottom: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
-  backdrop-filter: blur(16px) saturate(140%);
 }
 
 .header-content {
@@ -624,8 +624,7 @@ body.edit-mode .edit-mode-bar {
   background-color: color-mix(in srgb, var(--card-bg) calc(var(--opacity, 1) * 100%), transparent);
   border: 1px solid color-mix(in srgb, var(--border) calc(max(var(--opacity, 1), 0.35) * 100%), transparent);
   border-radius: var(--item-radius, var(--radius));
-  box-shadow: var(--shadow);
-  backdrop-filter: blur(12px) saturate(135%);
+  /* Like upstream: no shadow or backdrop blur; 30+ blurred cards made scrolling drop to ~7 fps. */
   padding: 12px;
   overflow: hidden;
   display: flex;
@@ -659,7 +658,6 @@ body.edit-mode .item-edit-controls {
   background-color: color-mix(in srgb, var(--card-bg) calc(var(--opacity, 1) * 58%), transparent);
   border: 1px solid color-mix(in srgb, var(--border) calc(max(var(--opacity, 1), 0.35) * 100%), transparent);
   border-radius: var(--item-radius, var(--radius));
-  backdrop-filter: blur(12px) saturate(130%);
   padding: 10px 14px 14px;
 }
 
