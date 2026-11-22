@@ -73,14 +73,14 @@ fn safe_hex_color(raw: &str) -> &str {
     }
 }
 
-fn format_compact_count(n: u64) -> String {
-    if n >= 1_000_000 {
-        format!("{:.1}M", n as f64 / 1_000_000.0)
-    } else if n >= 1_000 {
-        format!("{:.1}k", n as f64 / 1_000.0)
-    } else {
-        n.to_string()
+/// Upstream's `formatNumber`: SI suffix (k, M, G...) with two decimals.
+fn format_number(value: f64) -> String {
+    for (divider, suffix) in [(1e12, "T"), (1e9, "G"), (1e6, "M"), (1e3, "k")] {
+        if value >= divider {
+            return format!("{:.2}{suffix}", value / divider);
+        }
     }
+    format!("{value:.2}")
 }
 
 fn format_speed(bps: u64) -> String {
@@ -1316,34 +1316,55 @@ fn render_calendar(data: &Value) -> Markup {
     }
 }
 
-fn dns_tile(cls: &str, svg: &'static str, value: &str, label: &str) -> Markup {
+fn dns_tile(
+    cls: &str,
+    svg: &'static str,
+    value: &str,
+    label: &str,
+    tooltip: Option<&str>,
+) -> Markup {
     html! {
-        div class={ "dns-tile " (cls) } {
-            // safe: static SVG const.
-            (PreEscaped(svg))
-            div.dns-tile-value { (value) }
-            div.dns-tile-label { (label) }
+        section class={ "dns-tile " (cls) } title=[tooltip] aria-label={ (label) ": " (value) } {
+            // The tile is a size container; its body switches to a row on wide tiles.
+            div.dns-tile-body {
+                // safe: static SVG const.
+                (PreEscaped(svg))
+                div.dns-tile-texts {
+                    div.dns-tile-value { (value) }
+                    div.dns-tile-label { (label) }
+                }
+            }
         }
     }
 }
 
-/// Disable durations offered by the DNS hole controls, in seconds (0 = until re-enabled).
-const DNS_DISABLE_DURATIONS: [(u64, &str); 4] = [
-    (300, "5 minutes"),
-    (1800, "30 minutes"),
-    (3600, "1 hour"),
-    (0, "Until re-enabled"),
-];
+const DNS_ICON_PLAY: &str = r#"<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 4v16l13 -8z" /></svg>"#;
+const DNS_ICON_STOP: &str = r#"<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 7a2 2 0 0 1 2 -2h10a2 2 0 0 1 2 2v10a2 2 0 0 1 -2 2h-10a2 2 0 0 1 -2 -2z" /></svg>"#;
+const DNS_ICON_TIMER: &str = r#"<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20.942 13.018a9 9 0 1 0 -7.909 7.922" /><path d="M12 7v5l2 2" /><path d="M17 17v5" /><path d="M21 17v5" /></svg>"#;
 
-/// Disable button with a duration menu (`<details>`, no JS needed to open it).
-fn dns_disable_menu(ids: &str, label: &str) -> Markup {
+/// Upstream's timer popover: hours + minutes, 0/blank = until re-enabled. homarr.js turns the
+/// inputs into the `duration` (seconds) of the `dnsHoleDisable` action.
+fn dns_timer_popover(ids: &str, summary_class: &str, disabled: bool) -> Markup {
     html! {
-        details.dns-disable-menu {
-            summary.btn.btn-sm.btn-danger { (label) }
-            div.dns-disable-options {
-                @for (secs, text) in DNS_DISABLE_DURATIONS {
-                    button.btn.btn-sm type="button" data-integration-action="dnsHoleDisable" data-integration-ids=(ids)
-                        data-action-input=(serde_json::json!({ "duration": secs }).to_string()) { (text) }
+        details.dns-timer {
+            summary class=(summary_class) title="Set Timer" aria-label="Set Timer" aria-disabled=[disabled.then_some("true")] {
+                // safe: static SVG const.
+                (PreEscaped(DNS_ICON_TIMER))
+            }
+            div.dns-timer-popover {
+                div.dns-timer-title { "Set Timer" }
+                @for (name, text, max) in [("hours", "Hours", 999), ("minutes", "Minutes", 59)] {
+                    div.dns-timer-field {
+                        span { (text) }
+                        button.btn.btn-sm type="button" data-action="dns-timer-step" data-step="down" aria-label={ "- " (text) } { "–" }
+                        input type="number" name=(name) min="0" max=(max) step="1" value="0" inputmode="numeric";
+                        button.btn.btn-sm type="button" data-action="dns-timer-step" data-step="up" aria-label={ "+ " (text) } { "+" }
+                    }
+                }
+                div.dns-timer-hint { "Leave blank to unlimited" }
+                button.btn.btn-sm.dns-timer-set type="button" data-integration-action="dnsHoleDisable" data-integration-ids=(ids) data-dns-timer {
+                    // safe: static SVG const.
+                    (PreEscaped(DNS_ICON_TIMER)) " Set"
                 }
             }
         }
@@ -1370,30 +1391,47 @@ fn render_dns_hole(kind: WidgetKind, options: &Value, data: &Value) -> Markup {
         summaries
             .iter()
             .map(|s| s.get(key).and_then(Value::as_u64).unwrap_or(0))
-            .sum::<u64>()
+            .sum::<u64>() as f64
     };
     let queries = count("dnsQueriesToday");
-    let pct = if queries > 0 {
-        count("adsBlockedToday") as f64 * 100.0 / queries as f64
+    let blocked = count("adsBlockedToday");
+    let pct = if queries > 0.0 {
+        blocked * 100.0 / queries
     } else {
         0.0
     };
+    // Several blocklists can overlap, so the summed domain count is only a lower bound.
+    let multiple = summaries.len() >= 2;
+    let suffix = if multiple { "+" } else { "" };
+    let domains = format!("{}{suffix}", format_number(count("domainsBeingBlocked")));
+    let domains_tooltip = multiple.then_some(
+        "Due to multiple integrations Homarr can't calculate the exact number of domains being blocked",
+    );
     let layout = match options.get("layout").and_then(Value::as_str) {
-        Some("row") => "dns-layout-row",
-        Some("column") => "dns-layout-column",
+        Some("row") => " dns-layout-row",
+        Some("column") => " dns-layout-column",
         _ => "",
+    };
+    let pihole_colors = options
+        .get("usePiHoleColors")
+        .and_then(Value::as_bool)
+        .unwrap_or(true);
+    let colors = if pihole_colors {
+        " dns-pihole-colors"
+    } else {
+        ""
     };
 
     html! {
-        div class={ "dns-hole-grid " (layout) } {
-            (dns_tile("dns-red", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M13.252 20.601c-.408 .155 -.826 .288 -1.252 .399a12 12 0 0 1 -8.5 -15a12 12 0 0 0 8.5 -3a12 12 0 0 0 8.5 3a12 12 0 0 1 -.19 7.357" /><path d="M22 22l-5 -5" /><path d="M17 22l5 -5" /></svg>"#,
-                &format_compact_count(count("adsBlockedToday")), "Ads Blocked Today"))
-            (dns_tile("dns-yellow", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M17 17m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M7 7m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M6 18l12 -12" /></svg>"#,
-                &format!("{pct:.1}%"), "Queries Blocked"))
-            (dns_tile("dns-cyan", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>"#,
-                &format_compact_count(count("dnsQueriesToday")), "DNS Queries Today"))
-            (dns_tile("dns-green", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg>"#,
-                &format_compact_count(count("domainsBeingBlocked")), "Domains on Blocklist"))
+        div class={ "dns-hole-grid" (layout) (colors) } {
+            (dns_tile("dns-red", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8a1 1 0 0 1 1 -1h14a1 1 0 0 1 1 1v7a1 1 0 0 1 -1 1h-14a1 1 0 0 1 -1 -1z" /><path d="M7 16v4" /><path d="M7.5 16l9 -9" /><path d="M13.5 16l6.5 -6.5" /><path d="M4 13.5l6.5 -6.5" /><path d="M17 16v4" /><path d="M5 20h4" /><path d="M15 20h4" /><path d="M17 7v-2" /><path d="M7 7v-2" /></svg>"#,
+                &format_number(blocked), "Blocked today", None))
+            (dns_tile("dns-yellow", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 17m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M7 7m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M6 18l12 -12" /></svg>"#,
+                &format!("{}%", format_number(pct)), "Blocked today", None))
+            (dns_tile("dns-cyan", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M10 10m-7 0a7 7 0 1 0 14 0a7 7 0 1 0 -14 0" /><path d="M21 21l-6 -6" /></svg>"#,
+                &format_number(queries), "Queries today", None))
+            (dns_tile("dns-green", r#"<svg class="dns-tile-icon" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19.5 7a9 9 0 0 0 -7.5 -4a8.991 8.991 0 0 0 -7.484 4" /><path d="M11.5 3a16.989 16.989 0 0 0 -1.826 4" /><path d="M12.5 3a16.989 16.989 0 0 1 1.828 4" /><path d="M19.5 17a9 9 0 0 1 -7.5 4a8.991 8.991 0 0 1 -7.484 -4" /><path d="M11.5 21a16.989 16.989 0 0 1 -1.826 -4" /><path d="M12.5 21a16.989 16.989 0 0 0 1.828 -4" /><path d="M2 10l1 4l1.5 -4l1.5 4l1 -4" /><path d="M17 10l1 4l1.5 -4l1.5 4l1 -4" /><path d="M9.5 10l1 4l1.5 -4l1.5 4l1 -4" /></svg>"#,
+                &domains, "Domains on blocklist", domains_tooltip))
         }
     }
 }
@@ -1420,35 +1458,54 @@ fn render_dns_controls(options: &Value, items: &[&Value]) -> Markup {
         .get("showToggleAllButtons")
         .and_then(Value::as_bool)
         .unwrap_or(true);
+    // "Disable" means until re-enabled, like upstream's toggle (duration 0).
+    let forever = r#"{"duration":0}"#;
     html! {
-        @if show_all && (!disabled_ids.is_empty() || !enabled_ids.is_empty()) {
-            div.widget-actions.dns-toggle-all {
-                @if !disabled_ids.is_empty() {
-                    button.btn.btn-sm.btn-primary type="button" data-integration-action="dnsHoleEnable" data-integration-ids=(disabled_ids) { "Enable all" }
-                }
-                @if !enabled_ids.is_empty() { (dns_disable_menu(&enabled_ids, "Disable all")) }
-            }
-        }
-        ul.compact-list.dns-controls {
-            @for item in items {
-                @let id = str_field(item, "integrationId");
-                @let name = str_field(item, "name");
-                @if let Some(err) = item.get("error").and_then(Value::as_str) {
-                    li.dns-control-row {
-                        div { strong { (name) } div.metric-sub { (err) } }
-                        span.badge.down { "error" }
+        div.dns-controls {
+            @if show_all {
+                div.dns-toggle-all {
+                    button.dns-all-btn.dns-all-enable type="button" title="Enable All" aria-label="Enable All"
+                        data-integration-action="dnsHoleEnable" data-integration-ids=(disabled_ids) disabled[disabled_ids.is_empty()] {
+                        // safe: static SVG const.
+                        (PreEscaped(DNS_ICON_PLAY))
                     }
-                } @else {
+                    (dns_timer_popover(&enabled_ids, "dns-all-btn dns-all-timer", enabled_ids.is_empty()))
+                    button.dns-all-btn.dns-all-disable type="button" title="Disable All" aria-label="Disable All"
+                        data-integration-action="dnsHoleDisable" data-integration-ids=(enabled_ids) data-action-input=(forever) disabled[enabled_ids.is_empty()] {
+                        // safe: static SVG const.
+                        (PreEscaped(DNS_ICON_STOP))
+                    }
+                }
+            }
+            div.dns-control-list {
+                @for item in items {
+                    @let id = str_field(item, "integrationId");
+                    @let name = str_field(item, "name");
+                    @let icon = safe_url(str_field(item, "iconUrl"));
+                    @let error = item.get("error").and_then(Value::as_str);
                     @let enabled = !is_dns_disabled(item);
-                    li.dns-control-row {
-                        div {
-                            strong { (name) } " "
-                            span class={ "badge " (if enabled { "up" } else { "down" }) } { (if enabled { "enabled" } else { "disabled" }) }
+                    div.dns-control-card.dns-disconnected[error.is_some()] title=[error] {
+                        @if icon != "#" {
+                            img.dns-control-icon src=(icon) alt=(name) width="30" height="30" loading="lazy";
                         }
-                        @if enabled {
-                            (dns_disable_menu(id, "Disable"))
-                        } @else {
-                            button.btn.btn-sm.btn-primary type="button" data-integration-action="dnsHoleEnable" data-integration-ids=(id) { "Enable" }
+                        div.dns-control-data {
+                            div.dns-control-name { (name) }
+                            @if error.is_some() {
+                                span.dns-status { "Disconnected" }
+                            } @else if enabled {
+                                button.dns-status.dns-enabled type="button" aria-label={ "Disable All: " (name) }
+                                    data-integration-action="dnsHoleDisable" data-integration-ids=(id) data-action-input=(forever) {
+                                    span.dns-status-dot {} "Enabled"
+                                }
+                            } @else {
+                                button.dns-status.dns-disabled type="button" aria-label={ "Enable All: " (name) }
+                                    data-integration-action="dnsHoleEnable" data-integration-ids=(id) {
+                                    span.dns-status-dot {} "Disabled"
+                                }
+                            }
+                        }
+                        @if error.is_none() {
+                            (dns_timer_popover(id, "dns-item-timer", !enabled))
                         }
                     }
                 }
@@ -3042,12 +3099,19 @@ mod interactive_widget_tests {
         assert!(html.contains("connection refused"));
         // The failed integration gets no toggle.
         assert!(!html.contains(r#"data-integration-ids="c""#));
-        assert!(html.contains("Enable all"));
-        assert!(html.contains("Disable all"));
+        assert!(html.contains("Disconnected"));
+        assert!(html.contains("Enabled") && html.contains("Disabled"));
+        // Toggle-all row: enable, timer popover, disable (until re-enabled).
+        assert!(html.contains("dns-toggle-all"));
+        assert!(html.contains(r#"aria-label="Enable All""#));
+        assert!(html.contains(r#"aria-label="Disable All""#));
+        let forever = r#"data-action-input="{&quot;duration&quot;:0}""#;
+        assert!(html.contains(forever), "{html}");
+        assert!(html.contains("data-dns-timer"), "{html}");
 
         let options = json!({ "showToggleAllButtons": false });
         let hidden = dns(WidgetKind::DnsHoleControls, options, &data);
-        assert!(!hidden.contains("Enable all"));
+        assert!(!hidden.contains("dns-toggle-all"));
     }
 
     #[test]
@@ -3058,9 +3122,19 @@ mod interactive_widget_tests {
             { "integrationId": "c", "name": "C", "error": "down" },
         ]});
         let html = dns(WidgetKind::DnsHoleSummary, json!({}), &data);
-        assert!(html.contains("384.0k"), "{html}");
-        assert!(html.contains("20.0%"), "{html}");
-        assert!(html.contains("2.0k"), "{html}");
+        // Upstream formatNumber: two decimals; "+" because blocklists may overlap.
+        assert!(html.contains("384.00k+"), "{html}");
+        assert!(html.contains("20.00%"), "{html}");
+        assert!(html.contains("2.00k"), "{html}");
+        assert!(html.contains("400.00"), "{html}");
+        assert!(html.contains("Domains on blocklist"));
+        assert!(html.contains("dns-pihole-colors"));
+
+        let options = json!({ "usePiHoleColors": false, "layout": "grid" });
+        let plain = dns(WidgetKind::DnsHoleSummary, options, &data);
+        assert!(!plain.contains("dns-pihole-colors"));
+        assert_eq!(format_number(6_480.0), "6.48k");
+        assert_eq!(format_number(18.0725), "18.07");
     }
 
     #[test]

@@ -405,12 +405,19 @@ impl WidgetResolver {
             W::DnsHoleSummary | W::DnsHoleControls => {
                 let mut summaries = Vec::new();
                 for ctx in &contexts {
+                    let icon = homarr_definitions::get_integration_def(ctx.kind).icon_url;
                     // Keep failed integrations so the widget can show them instead of hiding them.
                     summaries.push(match self.integrations.get_dns_hole_summary(ctx).await {
-                        Ok(s) => json!({ "integrationId": ctx.id, "name": ctx.name, "summary": s }),
+                        Ok(s) => json!({
+                            "integrationId": ctx.id,
+                            "name": ctx.name,
+                            "iconUrl": icon,
+                            "summary": s,
+                        }),
                         Err(e) => json!({
                             "integrationId": ctx.id,
                             "name": ctx.name,
+                            "iconUrl": icon,
                             "error": e.to_string(),
                         }),
                     });

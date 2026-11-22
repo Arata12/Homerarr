@@ -1152,98 +1152,13 @@ body.edit-mode .board-container-open-all {
   animation: weather-drift 4s ease-in-out infinite;
 }
 
-/* DNS Hole 2x2 Colored Pi-hole Tiles */
+/* DNS Hole Summary: four stat tiles (upstream StatCard). Text sizes are fixed on screen. */
 .dns-hole-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   grid-template-rows: repeat(2, minmax(0, 1fr));
-  gap: 8px;
+  gap: 10px;
   height: 100%;
-}
-
-.dns-tile {
-  border-radius: calc(var(--item-radius, var(--radius)) - 2px);
-  padding: 8px 6px;
-  min-width: 0;
-  min-height: 0;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  text-align: center;
-  gap: 2px;
-  border: 1px solid color-mix(in srgb, var(--border) 55%, transparent);
-}
-
-.dns-red {
-  background: color-mix(in srgb, var(--mantine-red) 20%, transparent);
-  border-color: color-mix(in srgb, var(--mantine-red) 42%, transparent);
-}
-
-.dns-yellow {
-  background: color-mix(in srgb, var(--mantine-yellow) 20%, transparent);
-  border-color: color-mix(in srgb, var(--mantine-yellow) 42%, transparent);
-}
-
-.dns-cyan {
-  background: color-mix(in srgb, var(--mantine-cyan) 20%, transparent);
-  border-color: color-mix(in srgb, var(--mantine-cyan) 42%, transparent);
-}
-
-.dns-green {
-  background: color-mix(in srgb, var(--mantine-green) 20%, transparent);
-  border-color: color-mix(in srgb, var(--mantine-green) 42%, transparent);
-}
-
-.dns-tile-icon {
-  color: var(--text-strong);
-  opacity: 0.9;
-  flex-shrink: 0;
-}
-
-.dns-tile-value {
-  font-size: 1.15rem;
-  font-weight: 800;
-  color: var(--text-strong);
-  font-variant-numeric: tabular-nums;
-  line-height: 1.15;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dns-tile-label {
-  font-size: 0.7rem;
-  color: var(--text);
-  line-height: 1.15;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-@container (max-width: 230px) {
-  .dns-hole-grid {
-    gap: 4px;
-  }
-
-  .dns-tile {
-    padding: 4px;
-  }
-
-  .dns-tile-icon {
-    display: none;
-  }
-
-  .dns-tile-value {
-    font-size: 0.9rem;
-  }
-
-  .dns-tile-label {
-    font-size: 0.62rem;
-  }
 }
 
 .dns-hole-grid.dns-layout-row {
@@ -1256,7 +1171,125 @@ body.edit-mode .board-container-open-all {
   grid-template-rows: repeat(4, minmax(0, 1fr));
 }
 
-/* Interactive widget actions (DNS hole controls, media request approval) */
+.dns-tile {
+  --dns-color: var(--primary);
+  container-type: size;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: var(--item-radius, var(--radius));
+  background: color-mix(in srgb, var(--primary) calc(var(--opacity, 1) * 12%), transparent);
+  border: 1px solid color-mix(in srgb, var(--secondary) calc(var(--opacity, 1) * 45%), transparent);
+  color: var(--text-strong);
+}
+
+.dns-pihole-colors .dns-tile {
+  background: color-mix(in srgb, var(--dns-color) calc(var(--opacity, 1) * 40%), transparent);
+}
+
+.dns-pihole-colors .dns-red {
+  --dns-color: var(--mantine-red);
+}
+
+.dns-pihole-colors .dns-yellow {
+  --dns-color: var(--mantine-yellow);
+}
+
+.dns-pihole-colors .dns-cyan {
+  --dns-color: var(--mantine-cyan);
+}
+
+.dns-pihole-colors .dns-green {
+  --dns-color: var(--mantine-green);
+}
+
+.dns-tile-body {
+  height: 100%;
+  padding: 2px 10px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.dns-tile-icon {
+  width: 24px;
+  height: 24px;
+  flex-shrink: 0;
+}
+
+.dns-tile-texts {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.dns-tile-value {
+  font-size: 18px;
+  font-weight: 700;
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+
+.dns-tile-label {
+  font-size: 12px;
+  line-height: 1.25;
+}
+
+.dns-tile-value,
+.dns-tile-label {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Wider than tall: icon on the left, text centered in the remaining space (upstream isLong). */
+@container (min-aspect-ratio: 5/4) {
+  .dns-tile-body {
+    flex-direction: row;
+  }
+
+  .dns-tile-texts {
+    flex: 1;
+  }
+}
+
+/* Compact tiles: value only, like upstream's isCompact. */
+@container (max-height: 34px) {
+  .dns-tile-body {
+    padding: 2px;
+  }
+
+  .dns-tile-icon,
+  .dns-tile-label {
+    display: none;
+  }
+
+  .dns-tile-value {
+    font-size: 12px;
+  }
+}
+
+@container (max-width: 92px) {
+  .dns-tile-body {
+    padding: 2px;
+  }
+
+  .dns-tile-icon {
+    display: none;
+  }
+
+  .dns-tile-value {
+    font-size: 12px;
+  }
+}
+
+/* Interactive widget actions (media request approval) */
 .widget-actions {
   display: flex;
   flex-wrap: wrap;
@@ -1264,40 +1297,259 @@ body.edit-mode .board-container-open-all {
   align-items: center;
 }
 
-.widget-actions.dns-toggle-all {
-  margin-bottom: 8px;
-}
-
 [data-integration-action][aria-busy="true"] {
   opacity: 0.6;
   pointer-events: none;
 }
 
-.dns-disable-menu {
-  position: relative;
+/* DNS Hole Controls (upstream layout "md") */
+.dns-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
 }
 
-.dns-disable-menu > summary {
+.dns-toggle-all {
+  display: flex;
+  gap: 12px;
+}
+
+.dns-toggle-all > *,
+.dns-all-btn {
+  flex: 1;
+}
+
+.dns-all-btn {
+  --dns-color: var(--mantine-green);
+  height: 30px;
+  width: 100%;
+  border: 0;
+  border-radius: var(--item-radius, var(--radius));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: var(--dns-color);
+  background: color-mix(in srgb, var(--dns-color) 15%, transparent);
   list-style: none;
 }
 
-.dns-disable-menu > summary::-webkit-details-marker {
+.dns-all-btn:hover {
+  background: color-mix(in srgb, var(--dns-color) 22%, transparent);
+}
+
+.dns-all-timer {
+  --dns-color: var(--mantine-yellow);
+}
+
+.dns-all-disable {
+  --dns-color: var(--mantine-red);
+}
+
+.dns-all-btn:disabled,
+.dns-all-btn[aria-disabled="true"],
+.dns-item-timer[aria-disabled="true"] {
+  color: var(--text-muted);
+  background: var(--surface-hover);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.dns-item-timer[aria-disabled="true"] {
+  background: transparent;
+  opacity: 0.5;
+}
+
+.dns-control-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  justify-content: safe flex-end;
+  gap: 12px;
+}
+
+.dns-control-list:only-child {
+  justify-content: space-evenly;
+}
+
+.dns-control-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 8px 12px;
+  border-radius: var(--item-radius, var(--radius));
+  background: transparent;
+}
+
+.dns-control-icon {
+  width: 30px;
+  height: 30px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.dns-disconnected .dns-control-icon {
+  filter: grayscale(100%);
+}
+
+.dns-control-data {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+
+.dns-control-name {
+  font-size: 14px;
+  color: var(--text-strong);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dns-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  height: 26px;
+  padding: 0 12px;
+  border: 1px solid var(--border);
+  border-radius: 1000px;
+  background: var(--card-bg);
+  color: var(--text-strong);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.25px;
+  text-transform: uppercase;
+}
+
+button.dns-status {
+  cursor: pointer;
+}
+
+button.dns-status:hover {
+  background: var(--surface-hover);
+}
+
+.dns-status-dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: var(--mantine-green);
+}
+
+.dns-disabled .dns-status-dot {
+  background: var(--mantine-red);
+}
+
+.dns-timer {
+  position: relative;
+}
+
+.dns-timer > summary {
+  list-style: none;
+}
+
+.dns-timer > summary::-webkit-details-marker {
   display: none;
 }
 
-.dns-disable-options {
+.dns-item-timer {
+  width: 30px;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: var(--item-radius, var(--radius));
+  color: var(--mantine-yellow);
+  cursor: pointer;
+}
+
+.dns-item-timer svg {
+  width: 20px;
+  height: 20px;
+}
+
+.dns-item-timer:hover {
+  background: color-mix(in srgb, var(--mantine-yellow) 12%, transparent);
+}
+
+.dns-timer-popover {
   position: absolute;
   right: 0;
-  z-index: 20;
-  margin-top: 4px;
+  top: calc(100% + 6px);
+  z-index: 30;
+  width: max-content;
+  max-width: 280px;
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  padding: 6px;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
   border-radius: var(--radius);
   border: 1px solid var(--border);
-  background: var(--surface, var(--bg));
-  white-space: nowrap;
+  background: var(--surface);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  font-size: 14px;
+}
+
+.dns-toggle-all .dns-timer-popover {
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
+}
+
+.dns-timer-title {
+  align-self: flex-start;
+  font-weight: 500;
+  color: var(--text-strong);
+}
+
+.dns-timer-field {
+  align-self: flex-end;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dns-timer-field input {
+  width: 54px;
+  text-align: center;
+}
+
+.dns-timer-hint {
+  color: var(--text-muted);
+}
+
+.dns-timer-set {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  width: 12rem;
+  height: 2rem;
+  color: var(--mantine-red);
+  background: color-mix(in srgb, var(--mantine-red) 15%, transparent);
+  border: 0;
+}
+
+/* Let an open timer popover escape the card instead of being clipped (upstream uses a portal). */
+.grid-item:has(.dns-timer[open]) {
+  overflow: visible;
+  z-index: 50;
+}
+
+.dns-control-list:has(.dns-timer[open]) {
+  overflow: visible;
 }
 
 .badge.warn {

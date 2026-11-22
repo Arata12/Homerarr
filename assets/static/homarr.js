@@ -918,6 +918,12 @@
     try {
       input = JSON.parse(btn.getAttribute("data-action-input") || "null");
     } catch (_) {}
+    const timer = btn.hasAttribute("data-dns-timer") ? btn.closest(".dns-timer") : null;
+    if (timer) {
+      // DNS hole timer popover: hours + minutes → seconds (0 = until re-enabled).
+      const num = (name) => Math.max(0, parseInt(timer.querySelector('[name="' + name + '"]').value, 10) || 0);
+      input = { duration: num("hours") * 3600 + num("minutes") * 60 };
+    }
     const menu = btn.closest("details");
     if (menu) menu.open = false;
     btn.setAttribute("aria-busy", "true");
@@ -969,6 +975,11 @@
       "fill-input": (el) => {
         const input = document.getElementById(el.getAttribute("data-target"));
         if (input) input.value = el.getAttribute("data-value") || "";
+      },
+      "dns-timer-step": (el) => {
+        const input = el.parentElement.querySelector("input");
+        if (el.getAttribute("data-step") === "up") input.stepUp();
+        else input.stepDown();
       },
     },
     change: {
@@ -1049,7 +1060,9 @@
         } else {
           const html = await resp.text();
           // The user may have entered edit mode while the request was in flight.
-          if (!document.body.classList.contains("edit-mode") && w.el.isConnected) {
+          // An open DNS timer popover would be closed and reset by the morph; skip this round.
+          const timerOpen = w.el.querySelector(".dns-timer[open]");
+          if (!document.body.classList.contains("edit-mode") && w.el.isConnected && !timerOpen) {
             const keep = Array.from(w.el.children)
               .filter((c) => c.matches(EDITOR_PARTS))
               .map((c) => c.outerHTML)
