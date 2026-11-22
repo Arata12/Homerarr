@@ -1285,8 +1285,14 @@ fn render_media_requests(kind: WidgetKind, options: &Value, data: &Value) -> Mar
     let link_rel = new_tab.then_some("noopener noreferrer");
     let unknown = t("widget.mediaRequests-requestList.unknown", "Unknown");
     let to_be_determined = t("widget.mediaRequests-requestList.toBeDetermined", "TBD");
-    let approve = t("widget.mediaRequests-requestList.pending.approve", "Approve request");
-    let decline = t("widget.mediaRequests-requestList.pending.decline", "Decline request");
+    let approve = t(
+        "widget.mediaRequests-requestList.pending.approve",
+        "Approve request",
+    );
+    let decline = t(
+        "widget.mediaRequests-requestList.pending.decline",
+        "Decline request",
+    );
     html! {
         ul.media-request-list {
             @for item in items.iter().take(20) {
@@ -2226,7 +2232,10 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
     let overall_text = |label: &str| t(&format!("widget.uptimeKuma.overall.{overall}"), label);
     let (overall_icon, overall_label) = match overall {
         "operational" => (ICON_CIRCLE_CHECK, overall_text("All systems operational")),
-        "degraded" => (ICON_ALERT_TRIANGLE, overall_text("Partially degraded service")),
+        "degraded" => (
+            ICON_ALERT_TRIANGLE,
+            overall_text("Partially degraded service"),
+        ),
         "outage" => (ICON_CIRCLE_X, overall_text("Major outage")),
         "maintenance" => (ICON_TOOL, overall_text("Under maintenance")),
         _ if up > 0 => (
@@ -2428,7 +2437,9 @@ fn playback_status(transcoding: Option<&Value>) -> (String, &'static str) {
         Some(tr) => {
             let flag = |key: &str| tr.get(key).and_then(Value::as_bool).unwrap_or(true);
             match (flag("isVideoDirect"), flag("isAudioDirect")) {
-                (true, true) if tr.get("containerChanged").and_then(Value::as_bool) == Some(true) => {
+                (true, true)
+                    if tr.get("containerChanged").and_then(Value::as_bool) == Some(true) =>
+                {
                     ("directStream", "Direct stream", "teal")
                 }
                 (true, true) => ("directPlay", "Direct play", "green"),
@@ -2438,7 +2449,10 @@ fn playback_status(transcoding: Option<&Value>) -> (String, &'static str) {
             }
         }
     };
-    (t(&format!("widget.mediaServer.items.{status}"), label), color)
+    (
+        t(&format!("widget.mediaServer.items.{status}"), label),
+        color,
+    )
 }
 
 fn render_media_sessions(options: &Value, data: &Value) -> Markup {

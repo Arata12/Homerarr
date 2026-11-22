@@ -760,8 +760,7 @@ async fn render_full_board(
                 urlencoding(&item.id)
             )
         });
-        let rendered_card =
-            render_item_card(web, &locale, item, result, request_origin.as_deref());
+        let rendered_card = render_item_card(web, &locale, item, result, request_origin.as_deref());
 
         let mut extra_classes = String::new();
         for c in safe_css_classes(&item.advanced_options) {
