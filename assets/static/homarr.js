@@ -744,6 +744,7 @@
     const fIcon = mkRow("Icon URL", "iconUrl", app.iconUrl, true);
     const fHref = mkRow("URL", "href", app.href, false);
     const fDesc = mkRow("Description", "description", app.description, false);
+    const fPing = mkRow("Ping URL", "pingUrl", app.pingUrl, false);
     const actions = document.createElement("div");
     actions.style.cssText = "display:flex;gap:8px;justify-content:flex-end";
     const cancelBtn = document.createElement("button");
@@ -756,7 +757,7 @@
     saveBtn.className = "btn btn-primary";
     saveBtn.textContent = "Save Changes";
     actions.append(cancelBtn, saveBtn);
-    form.append(fName.r, fIcon.r, fHref.r, fDesc.r, actions);
+    form.append(fName.r, fIcon.r, fHref.r, fDesc.r, fPing.r, actions);
     form.onsubmit = async (ev) => {
       ev.preventDefault();
       const resp = await fetch("/api/apps/" + encodeURIComponent(app.id), {
@@ -767,6 +768,7 @@
           iconUrl: fIcon.i.value.trim(),
           href: fHref.i.value.trim() || null,
           description: fDesc.i.value.trim() || null,
+          pingUrl: fPing.i.value.trim() || null,
         }),
       });
       if (resp.ok) {
