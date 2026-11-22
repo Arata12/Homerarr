@@ -1,4 +1,5 @@
-use std::collections::HashMap;
+use std::cmp::Reverse;
+use std::collections::{HashMap, HashSet};
 
 use axum::{
     extract::{Path, State},
@@ -355,6 +356,70 @@ fn container_layout_css(layouts: &[&LayoutRecord]) -> String {
     css
 }
 
+/// Grows each non-scrollable container whose content needs more rows than its cell (upstream
+/// mobile layouts often keep a 1-row section around many apps) and pushes the siblings below it
+/// down by the same amount, so the content is not squeezed into overlapping rows.
+fn grow_containers_to_fit(
+    placements: &mut HashMap<String, ItemPlacement>,
+    growable: &HashSet<&str>,
+) {
+    let depth_of = |id: &str| {
+        let (mut depth, mut cur) = (0usize, id);
+        while let Some(pl) = placements.get(cur) {
+            depth += 1;
+            if depth > placements.len() {
+                break;
+            }
+            cur = &pl.section_id;
+        }
+        depth
+    };
+    let depth: HashMap<String, usize> = growable
+        .iter()
+        .filter(|id| placements.contains_key(**id))
+        .map(|id| (id.to_string(), depth_of(id)))
+        .collect();
+    let layout_count = placements.values().map(|p| p.cells.len()).max().unwrap_or(0);
+    for i in 0..layout_count {
+        // Innermost first, then top to bottom: growing only moves later siblings down.
+        let mut order: Vec<(&String, usize, i32)> = depth
+            .iter()
+            .filter_map(|(id, d)| Some((id, *d, placements.get(id)?.cells.get(i)?.y)))
+            .collect();
+        order.sort_by_key(|(id, d, y)| (Reverse(*d), *y, (*id).clone()));
+        for (id, _, _) in order {
+            let Some(cell) = placements.get(id).and_then(|p| p.cells.get(i)).copied() else {
+                continue;
+            };
+            let need = placements
+                .values()
+                .filter(|p| p.section_id == *id)
+                .filter_map(|p| p.cells.get(i))
+                .map(|c| c.y + c.h)
+                .max()
+                .unwrap_or(0);
+            if need <= cell.h {
+                continue;
+            }
+            let (delta, bottom) = (need - cell.h, cell.y + cell.h);
+            let parent = placements[id].section_id.clone();
+            for (sid, pl) in placements.iter_mut() {
+                if pl.section_id != parent {
+                    continue;
+                }
+                let Some(c) = pl.cells.get_mut(i) else {
+                    continue;
+                };
+                if sid == id {
+                    c.h = need;
+                } else if c.y >= bottom {
+                    c.y += delta;
+                }
+            }
+        }
+    }
+}
+
 enum GridNode<'a> {
     Item(&'a str),
     Container(&'a SectionRecord),
@@ -598,7 +663,15 @@ async fn render_full_board(
     let request_origin = request_origin(state, headers);
 
     let layouts = sorted_layouts(&full);
-    let placements = compute_placements(&full, &layouts);
+    let mut placements = compute_placements(&full, &layouts);
+    let growable: HashSet<&str> = full
+        .sections
+        .iter()
+        .filter(|s| s.kind == "container")
+        .filter(|s| !s.options.get("scrollable").and_then(Value::as_bool).unwrap_or(false))
+        .map(|s| s.id.as_str())
+        .collect();
+    grow_containers_to_fit(&mut placements, &growable);
     let col_count = layouts
         .iter()
         .map(|l| l.column_count)
@@ -924,5 +997,35 @@ mod tests {
             "{html}"
         );
         assert!(html.contains(r#"data-collapsible="true""#), "{html}");
+    }
+
+    fn place(parent: &str, cells: &[(i32, i32, i32, i32)]) -> ItemPlacement {
+        ItemPlacement {
+            section_id: parent.into(),
+            cells: cells
+                .iter()
+                .map(|&(x, y, w, h)| Cell { x, y, w, h, real: true })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn container_grows_to_fit_content_and_pushes_siblings_down() {
+        // Layout 0 (mobile): a 1-row container holding 3 rows of apps, a widget below it.
+        // Layout 1 (desktop): the container already fits.
+        let mut p = HashMap::from([
+            ("c".to_string(), place("root", &[(0, 2, 3, 1), (0, 0, 10, 3)])),
+            ("above".to_string(), place("root", &[(0, 0, 3, 2), (0, 5, 10, 1)])),
+            ("below".to_string(), place("root", &[(0, 3, 3, 2), (0, 3, 10, 2)])),
+            ("a1".to_string(), place("c", &[(0, 0, 1, 1), (0, 0, 1, 1)])),
+            ("a2".to_string(), place("c", &[(0, 2, 1, 1), (0, 2, 1, 1)])),
+        ]);
+        grow_containers_to_fit(&mut p, &HashSet::from(["c"]));
+        let cell = |id: &str, i: usize| p[id].cells[i];
+        assert_eq!((cell("c", 0).y, cell("c", 0).h), (2, 3));
+        assert_eq!(cell("below", 0).y, 5);
+        assert_eq!(cell("above", 0).y, 0);
+        assert_eq!(cell("a2", 0).y, 2);
+        assert_eq!((cell("c", 1).h, cell("below", 1).y), (3, 3));
     }
 }

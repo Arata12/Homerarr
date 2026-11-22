@@ -807,7 +807,7 @@
       .then((r) => (r.ok ? r.json() : null))
       .then((res) => {
         if (!res) return;
-        const ok = res.statusCode && res.statusCode < 400;
+        const ok = res.statusCode && res.statusCode < 500;
         document
           .querySelectorAll('.app-tile[data-app-id="' + CSS.escape(appId) + '"] .ping-dot')
           .forEach((dot) => {
@@ -1043,7 +1043,7 @@
             .forEach((dot) => {
               dot.classList.remove("up", "down", "unknown");
               dot.classList.add(
-                msg.payload.statusCode && msg.payload.statusCode < 400 ? "up" : "down"
+                msg.payload.statusCode && msg.payload.statusCode < 500 ? "up" : "down"
               );
             });
         }
