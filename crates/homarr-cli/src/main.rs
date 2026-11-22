@@ -1,4 +1,4 @@
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use clap::{Parser, Subcommand};
@@ -6,6 +6,7 @@ use homarr_auth::hash_password;
 use homarr_common::{generate_secure_random_token, HomarrError};
 use homarr_core::{AppConfig, DatabaseDriver};
 use homarr_db::{
+    legacy::import_legacy_sqlite,
     repos::{groups, integrations, sessions, users},
     seed::seed_defaults,
     Database,
@@ -71,6 +72,10 @@ enum IntegrationsCmd {
 enum DbCmd {
     Migrate,
     Seed,
+    /// Copies an upstream Homarr v1/v2 SQLite database into the configured, empty SQLite database.
+    ImportLegacy {
+        path: PathBuf,
+    },
 }
 
 fn ensure_sqlite_parent_dir(driver: DatabaseDriver, url: &str) {
@@ -293,6 +298,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             DbCmd::Seed => {
                 seed_defaults(&db).await?;
                 println!("Default database records seeded");
+            }
+            DbCmd::ImportLegacy { path } => {
+                let summary = import_legacy_sqlite(&db, &path).await?;
+                for (table, rows) in &summary.tables {
+                    println!("{table}: {rows} row(s)");
+                }
+                for table in &summary.skipped_tables {
+                    println!("skipped {table} (not in Homarr v3)");
+                }
+                println!(
+                    "Imported {}; dropped {} session(s), everyone must log in again",
+                    path.display(),
+                    summary.sessions_dropped
+                );
             }
         },
     }

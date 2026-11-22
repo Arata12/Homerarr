@@ -46,6 +46,8 @@ pub struct AppConfig {
     pub assets_dir: PathBuf,
     pub static_data_dir: PathBuf,
     pub homarr_request_identity_secret: Option<String>,
+    /// Migrate an upstream Homarr v1/v2 SQLite database at startup (`LEGACY_DB_AUTO_MIGRATE`).
+    pub legacy_db_auto_migrate: bool,
 }
 
 fn parse_bool(key: &str, default: bool) -> bool {
@@ -415,6 +417,7 @@ impl AppConfig {
             assets_dir,
             static_data_dir,
             homarr_request_identity_secret: non_empty_env("HOMARR_REQUEST_IDENTITY_SECRET"),
+            legacy_db_auto_migrate: parse_bool("LEGACY_DB_AUTO_MIGRATE", true),
         })
     }
 
@@ -455,6 +458,7 @@ impl AppConfig {
             assets_dir: PathBuf::from("assets"),
             static_data_dir: PathBuf::from("static-data"),
             homarr_request_identity_secret: None,
+            legacy_db_auto_migrate: false,
         }
     }
 

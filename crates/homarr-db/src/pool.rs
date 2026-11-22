@@ -101,7 +101,7 @@ impl Database {
         };
         if legacy_tables > 0 {
             return Err(HomarrError::Database(
-                "This database was created by the TypeScript Homarr (Drizzle migrations found) and is not compatible with Homarr v3. Point DB_URL at a new database."
+                "This database was created by the TypeScript Homarr v1/v2 (Drizzle migrations found). SQLite databases are migrated automatically at startup unless LEGACY_DB_AUTO_MIGRATE=false; PostgreSQL databases cannot be migrated yet. See docs/MIGRATING-FROM-HOMARR.md, or point DB_URL at a new database."
                     .to_string(),
             ));
         }
@@ -137,6 +137,17 @@ fn normalize_sqlite_url(url: &str) -> String {
     } else {
         format!("sqlite://{trimmed}")
     }
+}
+
+/// File path behind a SQLite URL; `None` for in-memory and `file:` URLs.
+pub(crate) fn sqlite_file_path(url: &str) -> Option<std::path::PathBuf> {
+    let conn_str = normalize_sqlite_url(url);
+    let rest = conn_str
+        .strip_prefix("sqlite://")
+        .or_else(|| conn_str.strip_prefix("sqlite:"))?;
+    let path = rest.split('?').next().unwrap_or_default();
+    (!path.is_empty() && path != ":memory:" && !rest.contains("mode=memory"))
+        .then(|| std::path::PathBuf::from(path))
 }
 
 fn map_migrate_err(err: sqlx::migrate::MigrateError) -> HomarrError {
