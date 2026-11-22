@@ -325,6 +325,22 @@
   updateClocks();
   setInterval(updateClocks, 1000);
 
+  // Media release dates arrive as ISO text; format them in the viewer's locale and time zone like upstream.
+  function localizeDates(root) {
+    const locale = document.documentElement.lang || undefined;
+    root.querySelectorAll("time.js-local-date[datetime]").forEach((el) => {
+      const date = new Date(el.getAttribute("datetime"));
+      if (isNaN(date.getTime())) return;
+      const opts = { year: "numeric", month: "2-digit", day: "2-digit" };
+      if (el.hasAttribute("data-date-only")) opts.timeZone = "UTC";
+      else Object.assign(opts, { hour: "2-digit", minute: "2-digit", hour12: false });
+      try {
+        el.textContent = new Intl.DateTimeFormat(locale, opts).format(date);
+      } catch (_) {}
+    });
+  }
+  localizeDates(document);
+
   // Collapsible category sections persisted in localStorage
   const COLLAPSED_KEY = "homarr-collapsed-sections";
   function readCollapsedMap() {
@@ -990,6 +1006,7 @@
               .map((c) => c.outerHTML)
               .join("");
             Idiomorph.morph(w.el, keep + html, { morphStyle: "innerHTML" });
+            localizeDates(w.el);
           }
           w.delay = w.base;
         }

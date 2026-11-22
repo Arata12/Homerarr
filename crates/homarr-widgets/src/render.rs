@@ -1182,38 +1182,54 @@ fn render_media_requests(kind: WidgetKind, options: &Value, data: &Value) -> Mar
     if items.is_empty() {
         return empty_box("No media requests");
     }
+    let link_target = if new_tab { "_blank" } else { "_self" };
+    let link_rel = new_tab.then_some("noopener noreferrer");
     html! {
-        ul.compact-list.media-request-list {
+        ul.media-request-list {
             @for item in items.iter().take(20) {
                 @let status = str_field(item, "status");
-                @let availability = str_field(item, "availability");
+                @let title = Some(str_field(item, "title")).filter(|t| !t.is_empty()).unwrap_or("Unknown");
                 @let href = safe_url(str_field(item, "href"));
                 @let poster = safe_url(str_field(item, "posterUrl"));
-                @let year = str_field(item, "airDate").get(..4).unwrap_or("");
+                @let backdrop = safe_url(str_field(item, "backdropUrl"));
+                @let year = str_field(item, "airDate").get(..4).unwrap_or("TBD");
+                @let requested_by = Some(str_field(item, "requestedBy")).filter(|u| !u.is_empty()).unwrap_or("Unknown");
                 @let input = serde_json::json!({ "requestId": str_field(item, "id") }).to_string();
-                li.media-request {
+                li.media-request-card {
+                    @if backdrop != "#" {
+                        img.media-card-backdrop src=(backdrop) alt="" loading="lazy" decoding="async" data-hide-on-error;
+                    }
                     @if poster != "#" {
-                        img.media-request-poster src=(poster) alt="" loading="lazy" data-hide-on-error;
+                        img.media-request-poster src=(poster) alt="" loading="lazy" decoding="async" data-hide-on-error;
                     }
-                    div.media-request-info {
-                        div.media-request-title {
-                            @if href != "#" {
-                                a href=(href) target=[new_tab.then_some("_blank")] rel="noopener noreferrer" { (str_field(item, "title")) }
-                            } @else {
-                                (str_field(item, "title"))
+                    div.media-request-body {
+                        div.media-request-row {
+                            div.media-request-meta {
+                                span.media-request-year { (year) }
+                                @if let Some((label, color)) = availability_badge(str_field(item, "availability")) {
+                                    span class={ "media-badge c-" (color) } { (label) }
+                                }
                             }
-                            @if !year.is_empty() { " " span.metric-sub { "(" (year) ")" } }
+                            div.media-request-user {
+                                span.media-avatar { (icon(ICON_USER)) }
+                                span.media-truncate { (requested_by) }
+                            }
                         }
-                        div.metric-sub { "Requested by " (str_field(item, "requestedBy")) }
-                        div.media-request-badges {
-                            span class={ "badge " (request_status_class(status)) } { (status) }
-                            @if !availability.is_empty() { span.badge { (availability) } }
-                        }
-                    }
-                    @if status == "pending" && !integration_id.is_empty() {
-                        div.widget-actions {
-                            button.btn.btn-sm.btn-primary type="button" data-integration-action="mediaRequestApprove" data-integration-ids=(integration_id) data-action-input=(input) { "Approve" }
-                            button.btn.btn-sm.btn-danger type="button" data-integration-action="mediaRequestDecline" data-integration-ids=(integration_id) data-action-input=(input) { "Decline" }
+                        div.media-request-row {
+                            @if href != "#" {
+                                a.media-request-title href=(href) target=(link_target) rel=[link_rel] title=(title) { (title) }
+                            } @else {
+                                span.media-request-title title=(title) { (title) }
+                            }
+                            @if status == "pending" && !integration_id.is_empty() {
+                                div.media-request-actions {
+                                    button.media-action.c-green type="button" title="Approve request" aria-label="Approve request" data-integration-action="mediaRequestApprove" data-integration-ids=(integration_id) data-action-input=(input) { (icon(ICON_THUMB_UP)) }
+                                    button.media-action.c-red type="button" title="Decline request" aria-label="Decline request" data-integration-action="mediaRequestDecline" data-integration-ids=(integration_id) data-action-input=(input) { (icon(ICON_THUMB_DOWN)) }
+                                }
+                            } @else {
+                                @let (label, color) = request_status_badge(status);
+                                span class={ "media-badge c-" (color) } { (label) }
+                            }
                         }
                     }
                 }
@@ -1222,17 +1238,63 @@ fn render_media_requests(kind: WidgetKind, options: &Value, data: &Value) -> Mar
     }
 }
 
-fn str_field<'a>(v: &'a Value, key: &str) -> &'a str {
-    v.get(key).and_then(Value::as_str).unwrap_or("")
+/// Upstream `mediaAvailabilityConfiguration` label and color.
+fn availability_badge(availability: &str) -> Option<(&'static str, &'static str)> {
+    Some(match availability {
+        "unknown" => ("Unknown", "orange"),
+        "pending" => ("Pending", "violet"),
+        "processing" => ("Processing", "blue"),
+        "requested" => ("Requested", "violet"),
+        "partiallyAvailable" => ("Partial", "yellow"),
+        "available" => ("Available", "green"),
+        "blacklisted" => ("Blacklisted", "gray"),
+        "deleted" => ("Deleted", "red"),
+        _ => return None,
+    })
 }
 
-fn request_status_class(status: &str) -> &'static str {
+/// Upstream `mediaRequestStatusConfiguration` label and color.
+fn request_status_badge(status: &str) -> (&str, &'static str) {
     match status {
-        "approved" | "completed" => "up",
-        "declined" | "failed" => "down",
-        "pending" => "warn",
-        _ => "",
+        "pending" => ("Pending", "blue"),
+        "approved" => ("Approved", "green"),
+        "declined" => ("Declined", "red"),
+        "failed" => ("Failed", "red"),
+        "completed" => ("Completed", "green"),
+        other => (other, "gray"),
     }
+}
+
+/// Static Tabler icon markup.
+fn icon(svg: &'static str) -> PreEscaped<&'static str> {
+    // safe: only called with the trusted `ICON_*` SVG constants below.
+    PreEscaped(svg)
+}
+
+const ICON_USER: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 7a4 4 0 1 0 8 0a4 4 0 0 0 -8 0" /><path d="M6 21v-2a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4v2" /></svg>"#;
+const ICON_THUMB_UP: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 11v8a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1v-7a1 1 0 0 1 1 -1h3a4 4 0 0 0 4 -4v-1a2 2 0 0 1 4 0v5h3a2 2 0 0 1 2 2l-1 5a2 3 0 0 1 -2 2h-7a3 3 0 0 1 -3 -3" /></svg>"#;
+const ICON_THUMB_DOWN: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 13v-8a1 1 0 0 0 -1 -1h-2a1 1 0 0 0 -1 1v7a1 1 0 0 0 1 1h3a4 4 0 0 1 4 4v1a2 2 0 0 0 4 0v-5h3a2 2 0 0 0 2 -2l-1 -5a2 3 0 0 0 -2 -2h-7a3 3 0 0 0 -3 3" /></svg>"#;
+const ICON_CALENDAR: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>"#;
+const ICON_CLOCK: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M12 7v5l3 3" /></svg>"#;
+const ICON_BOOK: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 19a9 9 0 0 1 9 0a9 9 0 0 1 9 0" /><path d="M3 6a9 9 0 0 1 9 0a9 9 0 0 1 9 0" /><path d="M3 6l0 13" /><path d="M12 6l0 13" /><path d="M21 6l0 13" /></svg>"#;
+const ICON_STAR: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8.243 7.34l-6.38 .925l-.113 .023a1 1 0 0 0 -.44 1.684l4.622 4.499l-1.09 6.355l-.013 .11a1 1 0 0 0 1.464 .944l5.706 -3l5.693 3l.1 .046a1 1 0 0 0 1.352 -1.1l-1.091 -6.355l4.624 -4.5l.078 -.085a1 1 0 0 0 -.633 -1.62l-6.38 -.926l-2.852 -5.78a1 1 0 0 0 -1.794 0l-2.853 5.78z" /></svg>"#;
+const ICON_VIDEO: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 10l4.553 -2.276a1 1 0 0 1 1.447 .894v6.764a1 1 0 0 1 -1.447 .894l-4.553 -2.276v-4z" /><path d="M3 6m0 2a2 2 0 0 1 2 -2h8a2 2 0 0 1 2 2v8a2 2 0 0 1 -2 2h-8a2 2 0 0 1 -2 -2z" /></svg>"#;
+const ICON_MOVIE: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 4m0 2a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2z" /><path d="M8 4l0 16" /><path d="M16 4l0 16" /><path d="M4 8l4 0" /><path d="M4 16l4 0" /><path d="M4 12l16 0" /><path d="M16 8l4 0" /><path d="M16 16l4 0" /></svg>"#;
+const ICON_TV: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 7a2 2 0 0 1 2 -2h14a2 2 0 0 1 2 2v9a2 2 0 0 1 -2 2h-14a2 2 0 0 1 -2 -2v-9z" /><path d="M16 3l-4 4l-4 -4" /></svg>"#;
+const ICON_HEADPHONES: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 13m0 2a2 2 0 0 1 2 -2h1a2 2 0 0 1 2 2v3a2 2 0 0 1 -2 2h-1a2 2 0 0 1 -2 -2z" /><path d="M15 13m0 2a2 2 0 0 1 2 -2h1a2 2 0 0 1 2 2v3a2 2 0 0 1 -2 2h-1a2 2 0 0 1 -2 -2z" /><path d="M4 15v-3a8 8 0 0 1 16 0v3" /></svg>"#;
+const ICON_PAUSE: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 5m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v12a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z" /><path d="M14 5m0 1a1 1 0 0 1 1 -1h2a1 1 0 0 1 1 1v12a1 1 0 0 1 -1 1h-2a1 1 0 0 1 -1 -1z" /></svg>"#;
+const ICON_WIFI: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 18l.01 0" /><path d="M9.172 15.172a4 4 0 0 1 5.656 0" /><path d="M6.343 12.343a8 8 0 0 1 11.314 0" /><path d="M3.515 9.515c4.686 -4.687 12.284 -4.687 17 0" /></svg>"#;
+const ICON_WORLD: &str = r#"<svg class="media-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12a9 9 0 1 0 18 0a9 9 0 0 0 -18 0" /><path d="M3.6 9h16.8" /><path d="M3.6 15h16.8" /><path d="M11.5 3a17 17 0 0 0 0 18" /><path d="M12.5 3a17 17 0 0 1 0 18" /></svg>"#;
+
+/// Icon of an integration kind (the dashboard-icons URL upstream shows as the source avatar).
+fn integration_icon_url(kind: &str) -> Option<&'static str> {
+    homarr_definitions::IntegrationKind::from_str_opt(kind)
+        .map(|kind| homarr_definitions::get_integration_def(kind).icon_url)
+        .filter(|url| safe_url(url) != "#")
+}
+
+fn str_field<'a>(v: &'a Value, key: &str) -> &'a str {
+    v.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
 fn render_calendar(data: &Value) -> Markup {
@@ -1930,19 +1992,20 @@ fn resolution_label(width: f64, height: f64) -> String {
         .map_or_else(|| format!("{effective:.0}p"), |tier| format!("{tier:.0}p"))
 }
 
-fn playback_status(transcoding: Option<&Value>) -> (&'static str, bool) {
+/// Upstream `getPlaybackStatus` label and badge color.
+fn playback_status(transcoding: Option<&Value>) -> (&'static str, &'static str) {
     let Some(t) = transcoding else {
-        return ("Direct play", false);
+        return ("Direct play", "green");
     };
     let flag = |key: &str| t.get(key).and_then(Value::as_bool).unwrap_or(true);
     match (flag("isVideoDirect"), flag("isAudioDirect")) {
         (true, true) if t.get("containerChanged").and_then(Value::as_bool) == Some(true) => {
-            ("Direct stream", false)
+            ("Direct stream", "teal")
         }
-        (true, true) => ("Direct play", false),
-        (false, true) => ("Transcode (video)", true),
-        (true, false) => ("Transcode (audio)", true),
-        (false, false) => ("Transcoding", true),
+        (true, true) => ("Direct play", "green"),
+        (false, true) => ("Transcoding video", "orange"),
+        (true, false) => ("Transcoding audio", "yellow"),
+        (false, false) => ("Transcoding", "red"),
     }
 }
 
@@ -1954,15 +2017,7 @@ fn render_media_sessions(options: &Value, data: &Value) -> Markup {
         .unwrap_or_default();
     let show_bitrate = opt_flag(options, "showBitrate", true);
     let show_location = opt_flag(options, "showLocation", true);
-    let playing: Vec<&Value> = sessions
-        .iter()
-        .filter(|s| s.get("currentlyPlaying").is_some_and(|p| !p.is_null()))
-        .collect();
-    let transcoding = playing
-        .iter()
-        .filter(|s| playback_status(s.pointer("/currentlyPlaying/metadata/transcoding")).1)
-        .count();
-    let total_kbps: f64 = playing
+    let total_kbps: f64 = sessions
         .iter()
         .filter_map(|s| {
             s.pointer("/currentlyPlaying/metadata/bitrateKbps")?
@@ -1970,24 +2025,53 @@ fn render_media_sessions(options: &Value, data: &Value) -> Markup {
         })
         .sum();
     let total_bitrate = format_bitrate_kbps(total_kbps).filter(|_| show_bitrate);
+    // Integrations with at least one session, in order, like the upstream footer.
+    let mut sources: Vec<(&str, &str)> = Vec::new();
+    for s in sessions {
+        let source = (
+            str_at(s, "integrationName").unwrap_or(""),
+            str_at(s, "integrationKind").unwrap_or(""),
+        );
+        if !source.0.is_empty() && !sources.contains(&source) {
+            sources.push(source);
+        }
+    }
+    let count = sessions.len();
 
     html! {
-        (render_integration_errors(data))
-        @if sessions.is_empty() {
-            @if !has_integration_errors(data) {
-                (empty_box("Nothing playing right now"))
-            }
-        } @else {
-            div.media-meta.media-summary {
-                span {
-                    (playing.len()) " active stream" @if playing.len() != 1 { "s" }
-                    @if transcoding > 0 { " · " (transcoding) " transcoding" }
+        div.media-server {
+            (render_integration_errors(data))
+            div.media-server-scroll {
+                table.media-server-table {
+                    thead {
+                        tr {
+                            th.media-col-user { "User" }
+                            th { "Currently playing" }
+                            th.media-col-status { "Status" }
+                        }
+                    }
+                    tbody {
+                        @for s in sessions {
+                            (render_media_session(s, show_bitrate, show_location))
+                        }
+                    }
                 }
-                @if let Some(total) = &total_bitrate { span { "Total " (total) } }
             }
-            div.media-sessions {
-                @for s in sessions.iter().take(8) {
-                    (render_media_session(s, show_bitrate, show_location))
+            div.media-server-footer {
+                div.media-server-count {
+                    (icon(ICON_VIDEO))
+                    span { (count) " active stream" @if count != 1 { "s" } }
+                    @if let Some(total) = &total_bitrate { span.muted { "Total: " (total) } }
+                }
+                div.media-server-sources {
+                    @for (name, kind) in &sources {
+                        span.media-server-source {
+                            @if let Some(url) = integration_icon_url(kind) {
+                                img src=(url) alt="" loading="lazy" data-hide-on-error;
+                            }
+                            span { (name) }
+                        }
+                    }
                 }
             }
         }
@@ -1998,17 +2082,25 @@ fn render_media_session(s: &Value, show_bitrate: bool, show_location: bool) -> M
     let user = s
         .pointer("/user/username")
         .and_then(Value::as_str)
-        .unwrap_or("");
-    let client = str_at(s, "sessionName").unwrap_or("Player");
-    let source = str_at(s, "integrationName");
+        .unwrap_or("Unknown user");
+    let session_name = str_at(s, "sessionName").unwrap_or("");
+    let user_cell = html! {
+        td {
+            div.media-user {
+                span.media-avatar { (icon(ICON_USER)) }
+                div.media-user-text {
+                    span.media-truncate { (user) }
+                    span.media-truncate.muted { (session_name) }
+                }
+            }
+        }
+    };
     let Some(p) = s.get("currentlyPlaying").filter(|p| !p.is_null()) else {
         return html! {
-            div.media-session-card {
-                div.media-session-top {
-                    div.media-title { (client) }
-                    span.badge.muted { "Idle" }
-                }
-                div.media-meta { span { (user) } }
+            tr {
+                (user_cell)
+                td { span.muted { (session_name) } }
+                td {}
             }
         };
     };
@@ -2017,31 +2109,35 @@ fn render_media_session(s: &Value, show_bitrate: bool, show_location: bool) -> M
         p.get("seasonNumber").and_then(Value::as_i64),
         p.get("episodeNumber").and_then(Value::as_i64),
     ) {
-        (Some(season), Some(episode)) => Some(format!("S{season:02}E{episode:02}")),
+        (Some(season), Some(episode)) => Some(format!("S{season:02} E{episode:02}")),
         _ => None,
     };
-    let subtitle: Vec<String> = season_episode
-        .into_iter()
-        .chain(str_at(p, "episodeName").map(str::to_string))
-        .chain(str_at(p, "albumName").map(str::to_string))
-        .collect();
-    let state = p.pointer("/playback/state").and_then(Value::as_str);
+    let paused = p.pointer("/playback/state").and_then(Value::as_str) == Some("paused");
     let position = p.pointer("/playback/positionMs").and_then(Value::as_f64);
     let duration = p
         .pointer("/playback/durationMs")
         .and_then(Value::as_f64)
         .filter(|d| *d > 0.0);
-    let pct = match (position, duration) {
-        (Some(pos), Some(dur)) => (pos / dur * 100.0).clamp(0.0, 100.0),
-        _ => 0.0,
-    };
+    let pct = position
+        .zip(duration)
+        .map(|(pos, dur)| (pos / dur * 100.0).clamp(0.0, 100.0));
     // The legacy mock reports a percentage, not milliseconds; its "duration" is exactly 100.
     let minutes_left = match (position, duration) {
         (Some(pos), Some(dur)) if dur != 100.0 => Some(((dur - pos) / 60_000.0).round().max(0.0)),
         _ => None,
     };
+    let type_icon = if paused {
+        ICON_PAUSE
+    } else {
+        match str_at(p, "type") {
+            Some("movie") => ICON_MOVIE,
+            Some("tv") => ICON_TV,
+            Some("audio") => ICON_HEADPHONES,
+            _ => ICON_VIDEO,
+        }
+    };
     let metadata = p.get("metadata").filter(|m| !m.is_null());
-    let (status, is_transcoding) = playback_status(
+    let (status, status_color) = playback_status(
         metadata
             .and_then(|m| m.get("transcoding"))
             .filter(|t| !t.is_null()),
@@ -2060,35 +2156,41 @@ fn render_media_session(s: &Value, show_bitrate: bool, show_location: bool) -> M
     let location = str_at(p, "location").filter(|_| show_location);
 
     html! {
-        div.media-session-card {
-            div.media-session-top {
-                div {
-                    div.media-title { (title) }
-                    @if !subtitle.is_empty() {
-                        div.media-sub { (subtitle.join(" · ")) }
+        tr {
+            (user_cell)
+            td {
+                div.media-now {
+                    span.media-now-icon.is-paused[paused] { (icon(type_icon)) }
+                    span.media-truncate { (title) }
+                    @if let Some(se) = &season_episode { span.muted.media-nowrap { (se) } }
+                    @if paused {
+                        span.media-paused { "Paused" }
+                    } @else if let Some(left) = minutes_left {
+                        span.muted.media-nowrap { (format!("{left:.0} min left")) }
                     }
                 }
-                @match state {
-                    Some("paused") => span.badge.muted { "Paused" },
-                    Some("buffering") => span.badge.warn { "Buffering" },
-                    _ => span.badge.up { "Playing" },
+                @if let Some(pct) = pct {
+                    div.progress-track.media-progress {
+                        div.progress-fill.(if paused { "is-yellow" } else { "is-green" }) style=(format!("width:{pct:.1}%")) {}
+                    }
                 }
             }
-            div.progress-track {
-                div.progress-fill style=(format!("width:{pct:.1}%")) {}
-            }
-            div.media-meta {
-                span { (user) " · " (client) @if let Some(src) = source { " · " (src) } }
-                span {
-                    @if let Some(left) = minutes_left { (format!("{left:.0} min left")) }
-                    @else { (format!("{pct:.0}%")) }
+            td {
+                div.media-status-line {
+                    span class={ "media-badge c-" (status_color) } { (status) }
+                    @if let Some(loc) = location {
+                        span.muted.media-location {
+                            (icon(if loc == "lan" { ICON_WIFI } else { ICON_WORLD }))
+                            (loc.to_uppercase())
+                        }
+                    }
                 }
-            }
-            div.media-tags {
-                span.badge.(if is_transcoding { "warn" } else { "up" }) { (status) }
-                @if let Some(loc) = location { span.badge { (loc.to_uppercase()) } }
-                @if let Some(res) = &resolution { span.badge { (res) } }
-                @if let Some(rate) = &bitrate { span.badge { (rate) } }
+                @if resolution.is_some() || bitrate.is_some() {
+                    div.media-status-line.muted {
+                        @if let Some(res) = &resolution { span { (res) } }
+                        @if let Some(rate) = &bitrate { span { (rate) } }
+                    }
+                }
             }
         }
     }
@@ -2101,9 +2203,6 @@ fn render_media_releases(options: &Value, data: &Value) -> Markup {
         .map(Vec::as_slice)
         .unwrap_or_default();
     let poster_layout = str_at(options, "layout") == Some("poster");
-    let show_type = opt_flag(options, "showType", true);
-    let show_source = opt_flag(options, "showSource", true);
-    let show_description = opt_flag(options, "showDescriptionTooltip", true);
     html! {
         (render_integration_errors(data))
         @if releases.is_empty() {
@@ -2112,50 +2211,131 @@ fn render_media_releases(options: &Value, data: &Value) -> Markup {
             }
         } @else {
             ul.media-releases.(if poster_layout { "is-poster" } else { "is-backdrop" }) {
-                @for rel in releases.iter().take(30) {
-                    @let title = str_at(rel, "title").unwrap_or("Untitled");
-                    @let sub = str_at(rel, "subtitle").filter(|s| !s.trim().is_empty());
-                    @let href = safe_url(str_at(rel, "href").unwrap_or("#"));
-                    @let image = rel
-                        .pointer(if poster_layout { "/imageUrls/poster" } else { "/imageUrls/backdrop" })
-                        .and_then(Value::as_str)
-                        .map(safe_url)
-                        .filter(|u| *u != "#");
-                    @let date = str_at(rel, "releaseDate")
-                        .map(|s| s.chars().take(10).collect::<String>())
-                        .unwrap_or_default();
-                    @let description = str_at(rel, "description").filter(|_| show_description);
-                    @let genres = rel
-                        .get("tags")
-                        .and_then(Value::as_array)
-                        .map(|t| t.iter().filter_map(Value::as_str).take(3).collect::<Vec<_>>().join(", "))
-                        .filter(|g| !g.is_empty());
-                    li.media-release title=[description] {
-                        @if let Some(src) = image {
-                            img.media-release-thumb src=(src) alt="" loading="lazy";
-                        }
-                        div.media-release-text {
-                            @if href == "#" {
-                                span.media-title { (title) }
-                            } @else {
-                                a.media-title href=(href) target="_blank" rel="noopener noreferrer" { (title) }
-                            }
-                            @if let Some(s) = sub { div.media-sub { (s) } }
-                            div.media-tags {
-                                span.badge { (date) }
-                                @if show_type {
-                                    @if let Some(kind) = str_at(rel, "type") { span.badge { (kind) } }
-                                }
-                                @if let Some(rating) = str_at(rel, "rating") { span.badge { "★ " (rating) } }
-                                @if show_source {
-                                    @if let Some(src) = str_at(rel, "integrationName") { span.badge.muted { (src) } }
-                                }
-                            }
-                            @if let Some(g) = genres { div.media-sub { (g) } }
-                        }
+                @for rel in releases {
+                    li { (render_media_release(rel, options, poster_layout)) }
+                }
+            }
+        }
+    }
+}
+
+/// Upstream `mediaTypeConfigurations` color.
+fn media_type_color(kind: &str) -> &'static str {
+    match kind {
+        "movie" => "blue",
+        "tv" => "violet",
+        "music" => "green",
+        "book" => "orange",
+        "game" => "yellow",
+        "video" => "red",
+        "article" => "pink",
+        _ => "gray",
+    }
+}
+
+fn render_media_release(rel: &Value, options: &Value, poster_layout: bool) -> Markup {
+    let show_type = opt_flag(options, "showType", true);
+    let show_source = opt_flag(options, "showSource", true);
+    let description = str_at(rel, "description")
+        .filter(|d| !d.trim().is_empty())
+        .filter(|_| opt_flag(options, "showDescriptionTooltip", true));
+    let title = str_at(rel, "title").unwrap_or("Untitled");
+    let subtitle = str_at(rel, "subtitle").filter(|s| !s.trim().is_empty());
+    let href = safe_url(str_at(rel, "href").unwrap_or("#"));
+    let image = |key: &str| {
+        rel.pointer(key)
+            .and_then(Value::as_str)
+            .map(safe_url)
+            .filter(|u| *u != "#")
+    };
+    let backdrop = image("/imageUrls/backdrop").filter(|_| !poster_layout);
+    let poster = image("/imageUrls/poster").filter(|_| poster_layout);
+    let release_date = str_at(rel, "releaseDate").unwrap_or("");
+    let date_only = rel
+        .get("releaseDateIsDateOnly")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let kind = str_at(rel, "type").unwrap_or("unknown");
+    let length = f64_at(rel, "length")
+        .filter(|l| *l > 0.0)
+        .and_then(|l| match kind {
+            "movie" | "tv" | "video" | "music" | "article" => {
+                Some((ICON_CLOCK, format!("{:.0}min", (l / 60.0).round())))
+            }
+            "book" => Some((ICON_BOOK, format!("{l:.0}"))),
+            _ => None,
+        });
+    let tags: Vec<&str> = rel
+        .get("tags")
+        .and_then(Value::as_array)
+        .map(|t| t.iter().filter_map(Value::as_str).collect())
+        .unwrap_or_default();
+    let source_name = str_at(rel, "integrationName").unwrap_or("");
+    let source_icon = integration_icon_url(str_at(rel, "integrationKind").unwrap_or(""));
+
+    let content = html! {
+        @if let Some(src) = backdrop {
+            img.media-card-backdrop src=(src) alt="" loading="lazy" decoding="async" data-hide-on-error;
+        }
+        @if let Some(src) = poster {
+            img.media-release-poster src=(src) alt=(title) loading="lazy" decoding="async" data-hide-on-error;
+        }
+        div.media-release-body {
+            div.media-release-title { (title) }
+            @if let Some(sub) = subtitle { div.media-release-sub { (sub) } }
+            div.media-release-info {
+                span {
+                    (icon(ICON_CALENDAR))
+                    time.js-local-date datetime=(release_date) data-date-only=[date_only.then_some("true")] {
+                        (release_date.get(..10).unwrap_or(release_date))
+                    }
+                }
+                @if let Some((length_icon, label)) = length {
+                    span.media-dot { "•" }
+                    span { (icon(length_icon)) (label) }
+                }
+                @if let Some(producer) = str_at(rel, "producer") {
+                    span.media-dot { "•" }
+                    span { (producer) }
+                }
+                @if let Some(rating) = str_at(rel, "rating") {
+                    span.media-dot { "•" }
+                    span { (icon(ICON_STAR)) (rating) }
+                }
+                @if let Some(price) = f64_at(rel, "price") {
+                    span.media-dot { "•" }
+                    span { (format!("${price:.2}")) }
+                }
+            }
+            @if !tags.is_empty() {
+                div.media-release-tags {
+                    @for tag in tags.iter().take(3) { span.media-chip { (tag) } }
+                    @if tags.len() > 3 { span.media-chip { "+" (tags.len() - 3) } }
+                }
+            }
+        }
+        @if show_type || show_source {
+            div.media-release-side {
+                @if show_type {
+                    span class={ "media-badge c-" (media_type_color(kind)) } { (kind) }
+                } @else {
+                    span {}
+                }
+                @if show_source && !source_name.is_empty() {
+                    @if let Some(url) = source_icon {
+                        img.media-release-source src=(url) alt=(source_name) title=(source_name) loading="lazy" data-hide-on-error;
+                    } @else {
+                        span.media-chip title=(source_name) { (source_name) }
                     }
                 }
             }
+        }
+    };
+    html! {
+        @if href == "#" {
+            div.media-release title=[description] { (content) }
+        } @else {
+            a.media-release href=(href) target="_blank" rel="noopener noreferrer" title=[description] { (content) }
         }
     }
 }
@@ -2686,9 +2866,11 @@ mod interactive_widget_tests {
               "createdAt": "2024-01-01T00:00:00Z" },
         ]});
         let html = requests(json!({}), &data);
-        assert!(html.contains("(2022)"));
-        assert!(html.contains("Dune"));
-        assert!(html.contains("mediaRequestApprove"));
+        assert!(html.contains(">2022<"));
+        assert!(html.contains("Dune") && html.contains(">Declined<"));
+        assert!(html.contains("alex") && html.contains(">Unknown<"));
+        assert!(html.contains("mediaRequestApprove") && html.contains("mediaRequestDecline"));
+        assert!(html.contains(r#"aria-label="Approve request""#));
         assert!(html.contains("{&quot;requestId&quot;:&quot;7&quot;}"));
 
         let filtered = requests(json!({ "statusFilter": ["declined"] }), &data);
@@ -2852,16 +3034,60 @@ mod data_widget_tests {
         });
         let html = render_widget_html(WidgetKind::MediaServer, "i", &json!({}), &data);
         for needle in [
-            "S01E02",
-            "Pilot",
+            "Currently playing",
+            "alice",
+            "Living room",
+            "S01 E02",
             "20 min left",
-            "Transcode (video)",
+            "Transcoding video",
             "WAN",
             "1080p",
-            "1 active stream",
-            "Total 5.4 Mb/s",
+            "1 active stream<",
+            "Total: 5.4 Mb/s",
             "Jellyfin",
             "timed out",
+        ] {
+            assert!(html.contains(needle), "missing {needle}: {html}");
+        }
+
+        // Nothing playing still shows the table and the upstream footer.
+        let empty = render_widget_html(WidgetKind::MediaServer, "i", &json!({}), &json!({}));
+        assert!(empty.contains("<th>Currently playing</th>"), "{empty}");
+        assert!(empty.contains("0 active streams"), "{empty}");
+    }
+
+    #[test]
+    fn media_release_card_shows_upstream_metadata() {
+        let data = json!({
+            "releases": [{
+                "id": "1",
+                "type": "movie",
+                "title": "The Odyssey",
+                "subtitle": "Defy the gods.",
+                "releaseDate": "2026-07-15T00:00:00Z",
+                "releaseDateIsDateOnly": true,
+                "imageUrls": { "poster": null, "backdrop": "/api/image-proxy/abc" },
+                "producer": "Universal Pictures",
+                "rating": "9.4",
+                "length": 10380.0,
+                "tags": ["Action", "Adventure", "Drama", "Fantasy"],
+                "href": "https://plex.example/web",
+                "integrationName": "Plex",
+                "integrationKind": "plex",
+            }],
+        });
+        let html = render_widget_html(WidgetKind::MediaReleases, "i", &json!({}), &data);
+        for needle in [
+            r#"src="/api/image-proxy/abc""#,
+            "Defy the gods.",
+            r#"datetime="2026-07-15T00:00:00Z" data-date-only="true""#,
+            "173min",
+            "Universal Pictures",
+            "9.4",
+            ">Action<",
+            ">+1<",
+            "c-blue",
+            r#"alt="Plex""#,
         ] {
             assert!(html.contains(needle), "missing {needle}: {html}");
         }
