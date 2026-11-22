@@ -395,7 +395,7 @@ fn render_app(options: &Value, data: &Value) -> Markup {
             .and_then(|p| p.get("statusCode"))
             .and_then(|s| s.as_u64())
         {
-            Some(code) if code < 400 => "ping-dot up",
+            Some(code) if code < 500 => "ping-dot up",
             Some(_) => "ping-dot down",
             None => "ping-dot unknown",
         }
