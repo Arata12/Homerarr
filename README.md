@@ -51,8 +51,8 @@
 - ✨ **92 Integrations &amp; 67 Built-in Widgets** — Native async clients for media servers, `*arr` automation, download clients, DNS sinkholes, hypervisors/UPS/health telemetry, firewalls/VPNs, Traefik/network tools, smart home, stocks, weather, calendars, RSS, and Markdown notebooks
 - 📌 **Fast App Directory &amp; Live Status Pings** — Bundled icon search across local &amp; curated icons plus live HTTP/status dot checks without external browser bloat
 - 👤 **Users, Groups, RBAC &amp; Invites** — Granular permissions per board and integration, first-run Onboarding Studio (`/init`), invite links, one-time revealed API keys (`ApiKey` header), and optional trusted-proxy SSO (`AUTH_TRUSTED_PROXY_HEADER`)
-- 🛡️ **Hardened Security by Default** — Bcrypt password hashing, Node.js-compatible AES-256-CBC secret vault (unauthenticated, no MAC — same format as upstream Homarr), auto-generated persistent secrets in `STATIC_DATA_DIR/secrets` (never logged), HTTPS-aware `Secure` cookies, strict `Origin` CSRF validation, and SSRF-guarded outbound HTTP requests
-- 🗄️ **SQLite &amp; PostgreSQL (`sqlx`) with Versioned Migrations** — 41-table migrations that seamlessly adopt existing SQLite/PostgreSQL schemas, plus portable JSON workspace Backup &amp; Restore
+- 🛡️ **Hardened Security by Default** — Bcrypt password hashing, AES-256-GCM secret vault (authenticated `v2:` format; secrets encrypted by upstream Homarr's AES-256-CBC format are still read), auto-generated persistent secrets in `STATIC_DATA_DIR/secrets` (never logged), HTTPS-aware `Secure` cookies, strict `Origin` CSRF validation, and SSRF-guarded outbound HTTP requests
+- 🗄️ **SQLite &amp; PostgreSQL (`sqlx`) with Versioned Migrations** — tracked SQLx migrations, automatic migration of upstream Homarr v1/v2 SQLite databases ([guide](docs/MIGRATING-FROM-HOMARR.md)), plus portable JSON workspace Backup &amp; Restore
 - 🕔 **Real-Time WebSockets &amp; Resilient Redis Fallback** — Tokio background cron scheduler (`/manage/tools/tasks`) and `/websockets` streaming; falls back cleanly to in-memory pub/sub in ~12 s if Redis is unavailable
 - 🔍 **Spotlight (`Ctrl+K`) &amp; 36 Languages** — Fuzzy search across boards, apps, integrations, web search bangs (`!prefix`), quick actions, and admin pages with 36 localization catalogs
 - 🤖 **OpenAPI 3.1, MCP &amp; Custom Widgets v2** — Interactive `/reference/api` explorer, Model Context Protocol server (`POST /api/mcp`), AI Assistant config, and standalone `homarr-workshop` service
@@ -95,6 +95,9 @@ docker run -d \
 
 > [!WARNING]
 > Mounting `docker.sock` gives the container root-equivalent access to the host, and `:ro` does not restrict Docker API calls. Prefer a [docker-socket-proxy](https://github.com/Tecnativa/docker-socket-proxy) that only allows read endpoints (e.g. `CONTAINERS=1`) plus the actions you need, and point Homarr at it instead of the raw socket.
+
+> [!TIP]
+> Coming from upstream Homarr v1/v2? Keep your `/appdata` volume and `SECRET_ENCRYPTION_KEY`; the SQLite database is migrated on first start. See [Migrating from Homarr](docs/MIGRATING-FROM-HOMARR.md).
 
 Then open **`http://localhost:7575`** — first boot redirects to `/init` to create the administrator account, choose your color scheme, and optionally seed a starter dashboard.
 
@@ -172,6 +175,7 @@ STATIC_DATA_DIR=./appdata DB_URL=./appdata/db/db.sqlite ASSETS_DIR=./assets ./ho
 | `REDIS_IS_EXTERNAL` / `REDIS_DISABLED` | `false` / `false` | Use external Redis (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`) with ~12 s memory fallback |
 | `DOCKER_SOCKET_PATHS` | `/var/run/docker.sock` | Comma-separated Docker socket paths (or `DOCKER_HOSTNAMES` / `DOCKER_PORTS`) |
 | `ENABLE_KUBERNETES` | `false` | Enable in-cluster Kubernetes inspection tools |
+| `LEGACY_DB_AUTO_MIGRATE` | `true` | Migrate an upstream Homarr v1/v2 SQLite database at startup (backup kept as `<db>.v2-backup-<timestamp>`); `false` refuses it instead |
 | `LOG_LEVEL` | `info` | Server log filter level (`trace`, `debug`, `info`, `warn`, `error`) |
 | `PUID` / `PGID` | `1000` / `1000` | Debian `Dockerfile` image only: user/group the server drops to after chowning `/appdata/{db,secrets,trusted-certificates}` (`0`/`0` = root). Not supported by the distroless release image, which always runs as `65532` (use compose `user:`) |
 
@@ -186,6 +190,7 @@ homarr users fix-usernames                  # Normalize legacy usernames
 homarr users recreate-admin <USER> <PASS>   # Recreate/promote admin account
 homarr integrations list                    # List configured integrations
 homarr db migrate | seed                    # Apply SQLx migrations or seed defaults
+homarr db import-legacy <FILE>              # Copy an upstream Homarr v1/v2 SQLite DB into the configured empty DB
 ```
 
 </details>
@@ -857,7 +862,7 @@ All **92 integration kinds** and **67 widgets** are compiled natively into `homa
 
 | Crate | Purpose |
 | --- | --- |
-| `homarr-common` | IDs, AES-256-CBC encryption (no MAC), keyed HMAC fingerprints, SuperJSON compatibility, grid reflow algorithm, SSRF URL guard |
+| `homarr-common` | IDs, AES-256-GCM encryption (reads legacy AES-256-CBC), keyed HMAC fingerprints, SuperJSON compatibility, grid reflow algorithm, SSRF URL guard |
 | `homarr-definitions` | 67 `WidgetKind`s, 92 `IntegrationKind`s, RBAC permission matrix, layout/section normalization |
 | `homarr-core` | Typed env config (`AppConfig`), persisted secret loader, `LogStore`, TLS certs, `HttpClientFactory` |
 | `homarr-db` | Dual SQLite &amp; PostgreSQL (`sqlx`) 41-table versioned migrations, repos, starter/demo seeding, JSON backup |

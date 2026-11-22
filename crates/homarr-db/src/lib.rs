@@ -1,4 +1,5 @@
 pub mod backup;
+pub mod legacy;
 pub mod models;
 pub mod pool;
 pub mod repos;
