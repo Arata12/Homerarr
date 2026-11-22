@@ -1371,7 +1371,11 @@ fn render_dns_hole(kind: WidgetKind, options: &Value, data: &Value) -> Markup {
         .get("usePiHoleColors")
         .and_then(Value::as_bool)
         .unwrap_or(true);
-    let colors = if pihole_colors { " dns-pihole-colors" } else { "" };
+    let colors = if pihole_colors {
+        " dns-pihole-colors"
+    } else {
+        ""
+    };
 
     html! {
         div class={ "dns-hole-grid" (layout) (colors) } {
