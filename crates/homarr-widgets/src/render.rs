@@ -3,7 +3,6 @@ use maud::{html, Markup, PreEscaped};
 use serde_json::Value;
 use url::Url;
 
-
 /// Filters unsafe URL schemes (`javascript:`, `data:text/html`, protocol-relative `//`, quotes)
 /// in rendered anchors/images/frames.
 pub fn safe_url(raw: &str) -> &str {
