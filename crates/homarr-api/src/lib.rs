@@ -983,7 +983,8 @@ mod tests {
         .await
         .unwrap();
         let board_id = board.board.id.clone();
-        let (section_id, layout_id) = (board.sections[0].id.clone(), board.layouts[0].id.clone());
+        let widest = board.layouts.iter().max_by_key(|l| l.column_count).unwrap();
+        let (section_id, layout_id) = (board.sections[0].id.clone(), widest.id.clone());
         let placement = |x: i32| {
             json!({
                 "itemId": "", "sectionId": section_id, "layoutId": layout_id,
