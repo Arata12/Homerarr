@@ -1959,7 +1959,10 @@ fn render_uptime_kuma(options: &Value, data: &Value) -> Markup {
     };
     let (overall_icon, overall_label) = match overall {
         "operational" => (ICON_CIRCLE_CHECK, "All systems operational".to_string()),
-        "degraded" => (ICON_ALERT_TRIANGLE, "Partially degraded service".to_string()),
+        "degraded" => (
+            ICON_ALERT_TRIANGLE,
+            "Partially degraded service".to_string(),
+        ),
         "outage" => (ICON_CIRCLE_X, "Major outage".to_string()),
         "maintenance" => (ICON_TOOL, "Under maintenance".to_string()),
         _ if up > 0 => (ICON_HELP_CIRCLE, format!("{up} of {total} monitors up")),
@@ -3063,7 +3066,10 @@ mod data_widget_tests {
         let html = render_widget_html(WidgetKind::UptimeKuma, "i", &options, &one_down);
         assert!(html.contains("Partially degraded service"), "{html}");
         assert!(html.contains("NAS") && !html.contains("Router"));
-        assert!(html.contains(r#"data-tone="critical""#), "90% uptime: {html}");
+        assert!(
+            html.contains(r#"data-tone="critical""#),
+            "90% uptime: {html}"
+        );
     }
 
     #[test]
