@@ -560,6 +560,15 @@ body.edit-mode .edit-mode-bar {
   width: 100%;
 }
 
+/* Like upstream, board cells are square: a row is as tall as a column is wide. */
+.board-sections-stack > .board-section {
+  container-type: inline-size;
+}
+
+.board-sections-stack > .board-section > .board-grid[data-layouts] {
+  grid-auto-rows: calc((100cqw - (var(--board-cols, 12) - 1) * 12px) / var(--board-cols, 12));
+}
+
 .section-header {
   display: flex;
   align-items: center;
