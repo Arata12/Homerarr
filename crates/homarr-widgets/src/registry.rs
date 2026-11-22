@@ -47,6 +47,9 @@ pub fn get_widget_metadata(kind: WidgetKind) -> WidgetMetadata {
     }
 }
 
+const MEDIA_REQUEST_STATUSES: [&str; 5] =
+    ["pending", "approved", "declined", "failed", "completed"];
+
 /// A selectable choice for `select` / `multiSelect` option fields.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OptionChoice {
@@ -144,6 +147,17 @@ fn build_option_field(kind: WidgetKind, key: &str, default: &Value) -> OptionFie
         (W::Downloads, "columns") => {
             field.field_type = "multiSelect".into();
             field.choices = choices(&["name", "progress", "speed", "size", "eta", "state"]);
+        }
+        (W::DnsHoleSummary, "layout") => {
+            field.field_type = "select".into();
+            field.choices = choices(&["grid", "row", "column"]);
+        }
+        (W::MediaRequestsRequestList, "statusFilter") => {
+            field.field_type = "multiSelect".into();
+            field.choices = choices(&MEDIA_REQUEST_STATUSES);
+        }
+        (W::MediaRequestsRequestList, "recentDays") => {
+            (field.min, field.max) = (Some(0.0), Some(365.0));
         }
         (W::MediaReleases, "layout") => {
             field.field_type = "select".into();
@@ -385,7 +399,11 @@ fn widget_details(
             "View and approve/decline Overseerr and Jellyseerr requests",
             "list-check",
             "media",
-            json!({ "linksTargetNewTab": true }),
+            json!({
+                "linksTargetNewTab": true,
+                "statusFilter": MEDIA_REQUEST_STATUSES,
+                "recentDays": 0,
+            }),
         ),
         W::MediaRequestsRequestStats => (
             "Media Request Stats",
@@ -432,7 +450,7 @@ fn widget_details(
             "Blocked DNS queries and adblock percentage telemetry",
             "shield-check",
             "network",
-            json!({}),
+            json!({ "layout": "grid" }),
         ),
         W::DnsHoleControls => (
             "DNS Hole Controls",

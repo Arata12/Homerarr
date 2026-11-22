@@ -130,6 +130,14 @@ pub struct MediaRequestItem {
     pub requested_by: String,
     pub created_at: String,
     pub poster_url: Option<String>,
+    /// Link to the request on the Seerr instance.
+    #[serde(default)]
+    pub href: Option<String>,
+    /// Media availability (`available`, `processing`, ...), distinct from the request status.
+    #[serde(default)]
+    pub availability: Option<String>,
+    #[serde(default)]
+    pub air_date: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

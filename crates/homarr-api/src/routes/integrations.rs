@@ -563,6 +563,7 @@ pub async fn execute_integration_action(
             )))
         }
     }
+    state.widgets.invalidate_integration(&id);
     Ok(Json(json!({ "ok": true })))
 }
 

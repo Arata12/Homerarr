@@ -133,6 +133,9 @@ pub fn media_requests() -> (Vec<MediaRequestItem>, MediaRequestStats) {
             requested_by: "alex".into(),
             created_at: Utc::now().to_rfc3339(),
             poster_url: None,
+            href: None,
+            availability: None,
+            air_date: None,
         },
         MediaRequestItem {
             id: "102".into(),
@@ -142,6 +145,9 @@ pub fn media_requests() -> (Vec<MediaRequestItem>, MediaRequestStats) {
             requested_by: "maria".into(),
             created_at: (Utc::now() - Duration::hours(5)).to_rfc3339(),
             poster_url: None,
+            href: None,
+            availability: None,
+            air_date: None,
         },
     ];
     let stats = MediaRequestStats {

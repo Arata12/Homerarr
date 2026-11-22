@@ -83,7 +83,7 @@ fn map_availability(status: i64, in_progress: bool, jellyseerr: bool) -> MediaAv
     }
 }
 
-fn availability_name(availability: MediaAvailability) -> String {
+pub(crate) fn availability_name(availability: MediaAvailability) -> String {
     serde_json::to_value(availability)
         .ok()
         .and_then(|value| value.as_str().map(str::to_string))
