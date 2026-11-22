@@ -3,8 +3,6 @@ use maud::{html, Markup, PreEscaped};
 use serde_json::Value;
 use url::Url;
 
-use crate::registry::get_widget_metadata;
-
 /// Filters unsafe URL schemes (`javascript:`, `data:text/html`, protocol-relative `//`, quotes)
 /// in rendered anchors/images/frames.
 pub fn safe_url(raw: &str) -> &str {
@@ -172,39 +170,6 @@ fn weather_visual(code: i64, is_day: bool) -> (&'static str, &'static str) {
     }
 }
 
-fn widget_header_icon(kind: WidgetKind) -> &'static str {
-    use WidgetKind as W;
-    match kind {
-        W::Downloads => {
-            r#"<svg class="ui-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2 -2v-2" /><path d="M7 11l5 5l5 -5" /><path d="M12 4l0 12" /></svg>"#
-        }
-        W::MediaServer => {
-            r#"<svg class="ui-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M7 4v16l13 -8z" /></svg>"#
-        }
-        W::HealthMonitoring | W::SystemResources | W::SystemDisks => {
-            r#"<svg class="ui-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12h4l3 8l4 -16l3 8h4" /></svg>"#
-        }
-        W::Calendar => {
-            r#"<svg class="ui-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 7a2 2 0 0 1 2 -2h12a2 2 0 0 1 2 2v12a2 2 0 0 1 -2 2h-12a2 2 0 0 1 -2 -2v-12z" /><path d="M16 3v4" /><path d="M8 3v4" /><path d="M4 11h16" /></svg>"#
-        }
-        W::Bookmarks => {
-            r#"<svg class="ui-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M18 7v14l-6 -4l-6 4v-14a4 4 0 0 1 4 -4h4a4 4 0 0 1 4 4z" /></svg>"#
-        }
-        W::SmartHomeEntityState | W::SmartHomeExecuteAutomation | W::SmartHomeControls => {
-            r#"<svg class="ui-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l-2 0l9 -9l9 9l-2 0" /><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-7" /><path d="M10 12h4v4h-4z" /></svg>"#
-        }
-        W::DockerContainers => {
-            r#"<svg class="ui-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l8 4.5v9l-8 4.5l-8 -4.5v-9z" /></svg>"#
-        }
-        W::RssFeed => {
-            r#"<svg class="ui-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M5 19m-1 0a1 1 0 1 0 2 0a1 1 0 1 0 -2 0" /><path d="M4 4a16 16 0 0 1 16 16" /><path d="M4 11a9 9 0 0 1 9 9" /></svg>"#
-        }
-        _ => {
-            r#"<svg class="ui-icon" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 4h6v6h-6z" /><path d="M14 4h6v6h-6z" /><path d="M4 14h6v6h-6z" /><path d="M14 14h6v6h-6z" /></svg>"#
-        }
-    }
-}
-
 fn empty_box(msg: &str) -> Markup {
     html! { div.widget-empty { (msg) } }
 }
@@ -250,26 +215,13 @@ fn render_widget(
     data: &Value,
     self_origin: Option<&str>,
 ) -> Markup {
-    let meta = get_widget_metadata(kind);
-    let custom_title = options
-        .get("title")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.trim().is_empty());
-    let title = custom_title.unwrap_or(&meta.name);
-    // safe: static SVG const.
-    let icon = PreEscaped(widget_header_icon(kind));
-
     if data
         .get("missingIntegration")
         .and_then(|v| v.as_bool())
         .unwrap_or(false)
     {
         return html! {
-            div class={ "widget-shell widget-" (kind.as_str()) } data-item-id=(item_id) {
-                div.widget-header {
-                    span.widget-header-title { (icon) span { (title) } }
-                    span.badge.muted { "No Integration" }
-                }
+            div class={ "widget-shell widget-shell-flush widget-" (kind.as_str()) } data-item-id=(item_id) {
                 div.widget-empty { "Assign a compatible integration in board edit mode to display live telemetry." }
             }
         };
@@ -327,7 +279,7 @@ fn render_widget(
         _ => render_generic(data),
     };
 
-    let show_header = !matches!(
+    let flush = matches!(
         kind,
         WidgetKind::App
             | WidgetKind::Clock
@@ -338,18 +290,25 @@ fn render_widget(
             | WidgetKind::Countdown
             | WidgetKind::Timer
     );
+    // Like upstream there is no generic title bar; only a user-set `title` option is shown.
+    let custom_title = options
+        .get("title")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.trim().is_empty());
 
     html! {
-        @if show_header {
-            div class={ "widget-shell widget-" (kind.as_str()) } data-item-id=(item_id) {
-                div.widget-header {
-                    span.widget-header-title { (icon) span { (title) } }
-                }
-                div.widget-body { (body) }
-            }
-        } @else {
+        @if flush {
             div class={ "widget-shell widget-shell-flush widget-" (kind.as_str()) } data-item-id=(item_id) {
                 (body)
+            }
+        } @else {
+            div class={ "widget-shell widget-" (kind.as_str()) } data-item-id=(item_id) {
+                @if let Some(title) = custom_title {
+                    div.widget-header {
+                        span.widget-header-title { (title) }
+                    }
+                }
+                div.widget-body { (body) }
             }
         }
     }
@@ -410,10 +369,10 @@ fn render_app(options: &Value, data: &Value) -> Markup {
 
     html! {
         a.app-tile href=(href) target="_blank" rel="noopener noreferrer" data-ping-url=(ping_url) data-app-id=(app_id) title=(title_attr) {
-            img.app-icon src=(icon) alt=(name) loading="lazy" data-fallback-src="/logo/homarr.svg";
             @if show_title {
                 div.app-name { (name) }
             }
+            img.app-icon src=(icon) alt=(name) loading="lazy" data-fallback-src="/logo/homarr.svg";
             @if let Some(cls) = ping_cls {
                 span class=(cls) title="Service status" {}
             }
