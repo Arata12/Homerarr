@@ -379,7 +379,11 @@ fn grow_containers_to_fit(
         .filter(|id| placements.contains_key(**id))
         .map(|id| (id.to_string(), depth_of(id)))
         .collect();
-    let layout_count = placements.values().map(|p| p.cells.len()).max().unwrap_or(0);
+    let layout_count = placements
+        .values()
+        .map(|p| p.cells.len())
+        .max()
+        .unwrap_or(0);
     for i in 0..layout_count {
         // Innermost first, then top to bottom: growing only moves later siblings down.
         let mut order: Vec<(&String, usize, i32)> = depth
@@ -668,7 +672,12 @@ async fn render_full_board(
         .sections
         .iter()
         .filter(|s| s.kind == "container")
-        .filter(|s| !s.options.get("scrollable").and_then(Value::as_bool).unwrap_or(false))
+        .filter(|s| {
+            !s.options
+                .get("scrollable")
+                .and_then(Value::as_bool)
+                .unwrap_or(false)
+        })
         .map(|s| s.id.as_str())
         .collect();
     grow_containers_to_fit(&mut placements, &growable);
@@ -1004,7 +1013,13 @@ mod tests {
             section_id: parent.into(),
             cells: cells
                 .iter()
-                .map(|&(x, y, w, h)| Cell { x, y, w, h, real: true })
+                .map(|&(x, y, w, h)| Cell {
+                    x,
+                    y,
+                    w,
+                    h,
+                    real: true,
+                })
                 .collect(),
         }
     }
@@ -1014,9 +1029,18 @@ mod tests {
         // Layout 0 (mobile): a 1-row container holding 3 rows of apps, a widget below it.
         // Layout 1 (desktop): the container already fits.
         let mut p = HashMap::from([
-            ("c".to_string(), place("root", &[(0, 2, 3, 1), (0, 0, 10, 3)])),
-            ("above".to_string(), place("root", &[(0, 0, 3, 2), (0, 5, 10, 1)])),
-            ("below".to_string(), place("root", &[(0, 3, 3, 2), (0, 3, 10, 2)])),
+            (
+                "c".to_string(),
+                place("root", &[(0, 2, 3, 1), (0, 0, 10, 3)]),
+            ),
+            (
+                "above".to_string(),
+                place("root", &[(0, 0, 3, 2), (0, 5, 10, 1)]),
+            ),
+            (
+                "below".to_string(),
+                place("root", &[(0, 3, 3, 2), (0, 3, 10, 2)]),
+            ),
             ("a1".to_string(), place("c", &[(0, 0, 1, 1), (0, 0, 1, 1)])),
             ("a2".to_string(), place("c", &[(0, 2, 1, 1), (0, 2, 1, 1)])),
         ]);
